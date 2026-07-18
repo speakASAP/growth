@@ -26,7 +26,7 @@ bazos/k8s/configmap.yaml            (orders service URL configured)
 
 This is materially better than speakasap/marathon/chytrakoupe/cliplot, which have no `orders` integration at all. Choosing Bazos avoids the blocking revenue-visibility gap for stage 1.
 
-⚠️ **Open question, must be resolved before MS-003:** the `orders` integration found in Bazos handles **marketplace orders** (orders arising from listings), under `bazos/services/aukro-service/src/aukro/orders/`. It is not established that **subscription/service revenue from customers of the Bazos automation tool itself** flows through the same path.
+⚠️ **Open question, must be resolved before MS-003.** The `orders` module (at the stale path `bazos/services/aukro-service/src/aukro/orders/`) is Bazos's own — but bazos.cz is a *classifieds* site with no marketplace checkout: buyers contact sellers directly. So what "orders" means there needs establishing, and separately whether **subscription revenue from customers of the Bazos automation tool** produces any order or payment event at all.
 
 These are different money:
 
