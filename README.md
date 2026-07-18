@@ -1,4 +1,4 @@
-# growth-microservice
+# growth
 
 > **Status: documentation phase — no code yet, by design.**
 > Documentation → contracts → validation → coding, in that order.
@@ -11,25 +11,25 @@ Follows the canonical Intent Preservation System layout used across the ecosyste
 
 | Dir | Contents | State |
 |---|---|---|
-| `06_architecture/` | **`ARCHITECTURE.md` — the implementation baseline** | ✅ v7 |
-| `07_decisions/` | Decision records D1–D24 | ✅ |
-| `08_roadmap/` | Delivery model, gates, slice rules | ✅ |
-| `09_milestones/` | **MS-001…MS-004, MS-P** — synchronisation points | ✅ |
-| `10_features/` | F-001…F-013 — one per slice | ◷ |
-| `11_tasks/` | `TASK-NNN-*.md` — per feature | ◷ |
-| `12_validation/` | Validation reports, API access evidence | ◷ |
-| `13_context_packages/` | Context packages for AI worker agents | ◷ |
-| `14_prompts/` | Coding prompts | ◷ |
-| `16_operations/` | `PHASE0-ACCESS-TRACKER.md` | ✅ |
-| `21_execution_plans/` | Per-slice execution plans (allowed/forbidden files, merge order) | ◷ |
-| `23_documentation_contracts/` | Event JSON schemas — the executable contracts | ◷ |
+| `docs/06_architecture/` | **`ARCHITECTURE.md` — the implementation baseline** | ✅ v7 |
+| `docs/07_decisions/` | Decision records D1–D24 | ✅ |
+| `docs/08_roadmap/` | Delivery model, gates, slice rules | ✅ |
+| `docs/09_milestones/` | **MS-001…MS-004, MS-P** — synchronisation points | ✅ |
+| `docs/10_features/` | F-001…F-013 — one per slice | ◷ |
+| `docs/11_tasks/` | `TASK-NNN-*.md` — per feature | ◷ |
+| `docs/12_validation/` | Validation reports, API access evidence | ◷ |
+| `docs/13_context_packages/` | Context packages for AI worker agents | ◷ |
+| `docs/14_prompts/` | Coding prompts | ◷ |
+| `docs/16_operations/` | `PHASE0-ACCESS-TRACKER.md` | ✅ |
+| `docs/21_execution_plans/` | Per-slice execution plans (allowed/forbidden files, merge order) | ◷ |
+| `docs/23_documentation_contracts/` | Event JSON schemas — the executable contracts | ◷ |
 
 ## Reading order
 
-1. `06_architecture/ARCHITECTURE.md` — what is being built and why
-2. `09_milestones/MS-001-access-and-baseline.md` — **the active milestone**
-3. `08_roadmap/DELIVERY_PLAN.md` — how work is organised
-4. `16_operations/PHASE0-ACCESS-TRACKER.md` — what is blocked on external access
+1. `docs/06_architecture/ARCHITECTURE.md` — what is being built and why
+2. `docs/09_milestones/MS-001-access-and-baseline.md` — **the active milestone**
+3. `docs/08_roadmap/DELIVERY_PLAN.md` — how work is organised
+4. `docs/16_operations/PHASE0-ACCESS-TRACKER.md` — what is blocked on external access
 
 ## Governing standards
 

@@ -1,8 +1,8 @@
 # Growth Platform — Delivery Plan
 
 > **v1** · 2026-07-18 · Owner: Sergej
-> Companion to [`../GROWTH_PLATFORM_ARCHITECTURE.md`](../GROWTH_PLATFORM_ARCHITECTURE.md) (v7).
-> Governed by [`/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md`](/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md) and [`../../AGENT_OPERATIONS.md`](../../AGENT_OPERATIONS.md) §Parallel Work.
+> Companion to [`../06_architecture/ARCHITECTURE.md`](../06_architecture/ARCHITECTURE.md) (v7).
+> Governed by [`/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md`](/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md) and [`../../../shared/AGENT_OPERATIONS.md`](../../../shared/AGENT_OPERATIONS.md) §Parallel Work.
 
 ---
 
@@ -28,7 +28,7 @@ Four agent roles (from the standard):
 
 > ⚠️ **Gap found 2026-07-18:** the standard defines parallel-work rules, integration owners and merge order, but **does not define milestones**. This document adds them (§4) in the standard's vocabulary. Also: `shared/docs/ECOSYSTEM_REFACTOR_MASTER_PROMPT.md` is referenced from `shared/CLAUDE.md` Tier 2 but **does not exist** — broken reference, unrelated to this project but worth fixing.
 
-Validation debt ledger for this project: `shared/docs/growth/VALIDATION_DEBT.md`.
+Validation debt ledger for this project: `growth/docs/12_validation/VALIDATION_DEBT.md`.
 
 ---
 
@@ -104,7 +104,7 @@ Parallel work runs freely **between** milestones. At each milestone all active w
 
 | Milestone | Gate condition | Integration owner |
 |---|---|---|
-| **M0 — Access** | Phase 0 complete: business selected, ad account live, API access confirmed by a real call, consent baseline established. See `PHASE0-ACCESS-TRACKER.md` | owner + Claude |
+| **M0 — Access** | Phase 0 complete: business selected, ad account live, API access confirmed by a real call, consent baseline established. See `../16_operations/PHASE0-ACCESS-TRACKER.md` | owner + Claude |
 | **M1 — First experiment ready** | S1 + S5 + S6 verified. Touchpoint→lead traceable end-to-end. Provider-side budget caps set. **Manual capped experiment runs here.** | Claude |
 | **M2 — Revenue visible** | S7 + S8 verified. `revenue.recognised` flowing from flipflop. Spend observations reconciled | Claude |
 | **M3 — Automation** | S9 + S10 + S11 + S12 verified. Writes reconciled, conversions uploaded, analysis producing recommendations | Claude |
@@ -227,7 +227,7 @@ Rationale: a contract *document* never fails. An executable schema does. With 5 
 
 ## 9. Per-slice document template
 
-Each slice gets `shared/docs/growth/<ID>-<name>.md`:
+Each slice gets `growth/docs/10_features/F-NNN-<name>.md`:
 
 ```markdown
 # <ID> — <name>

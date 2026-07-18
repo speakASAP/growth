@@ -14,29 +14,28 @@ No implementation work in this milestone. Spikes only.
 
 | # | Criterion | Evidence required | Status |
 |---|---|---|---|
-| 1 | First business selected | Named in this document | ☐ |
+| 1 | First business selected | **Bazos** — [D-001](../07_decisions/D-001-first-business-and-platform.md) | ✅ |
 | 2 | Market confirmed as CZ | Architecture §1.2 | ✅ |
-| 3 | First ad platform explicitly chosen | Decision recorded in `07_decisions/` | ☐ |
+| 3 | First ad platform explicitly chosen | Decision recorded in `docs/07_decisions/` | ☐ |
 | 4 | Legal entity + ad-account ownership confirmed | Owner statement | ☐ |
-| 5 | Google Ads developer token — access level confirmed **by a real API call** | Response captured in `12_validation/` | ☐ |
+| 5 | Google Ads developer token — access level confirmed **by a real API call** | Response captured in `docs/12_validation/` | ☐ |
 | 6 | Meta app + Business Verification status confirmed | Response captured | ☐ |
 | 7 | Sklik API access assessed | Spike findings doc | ☐ |
 | 8 | Czech consent baseline + privacy policy live | URL + counsel note | ☐ |
 | 9 | Provider-side spend limits configured | Screenshot/export reference | ☐ |
 | 10 | Durable edge-ingestion implementation selected | Decision recorded | ☐ |
 
-## Open decision — first ad platform
+## Resolved — first business and platform
 
-The delivery plan assumes Google Ads first (S8→S9→S10, Sklik at S13). Phase 0 nominally says "select one platform". **These contradict.** Resolve by recording one of:
+**Bazos + Google Ads** ([D-001](../07_decisions/D-001-first-business-and-platform.md)). Option (a) taken: Sklik follows after the Google write/reconciliation path is proven, so slice names S8–S10 stay accurate.
 
-- **(a)** Google Ads is the stage-1 platform; Sklik follows after the Google write/reconciliation path is proven → S8–S10 names stay accurate
-- **(b)** Slices renamed to "selected-platform connector" and the choice made here
+Bazos is wired to `orders-microservice` (`bazos/shared/clients/order-client.service.ts`), unlike speakasap/marathon/chytrakoupe/cliplot — this avoids the revenue-visibility gap for stage 1.
 
-Recommendation: **(a)** — Google Ads has the larger surface to prove and better documented offline-conversion path; Sklik is a narrower follow-on.
+⚠️ **Carried into MS-003:** that integration covers *marketplace* orders. Whether **subscription revenue for the Bazos service itself** flows the same way is unverified. MS-002 is unaffected — its outcome is a qualified lead.
 
 ## Verification method
 
-Access is **not** confirmed by a dashboard screenshot. It is confirmed by a successful authenticated API call whose response is recorded in `12_validation/`. Credentials live in Vault (`secret/prod/growth-microservice`); Claude reads them directly and runs the call.
+Access is **not** confirmed by a dashboard screenshot. It is confirmed by a successful authenticated API call whose response is recorded in `docs/12_validation/`. Credentials live in Vault (`secret/prod/growth`); Claude reads them directly and runs the call.
 
 Division of labour, stated accurately:
 
@@ -49,8 +48,8 @@ Division of labour, stated accurately:
 
 ## Blockers
 
-- [MISSING: selected first business]
-- [MISSING: ad platform decision — see above]
+- [MISSING: Google Ads account + developer token] — items 4–6
+- [UNKNOWN: Bazos service-subscription billing path] — resolve before MS-003
 
 ## Next action
 

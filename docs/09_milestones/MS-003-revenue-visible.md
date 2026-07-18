@@ -9,6 +9,9 @@ Make revenue attributable to an experiment, through a scheme any business can ad
 
 ## Blocking finding (verified in code, 2026-07-18)
 
+> **Bazos (the selected first business) IS wired to `orders`** — see [D-001](../07_decisions/D-001-first-business-and-platform.md). The table below is why that mattered, and why the universal scheme is still built.
+
+
 | App | Routes through `orders-microservice`? |
 |---|---|
 | flipflop | partially — has its own `flipflop/services/order-service` |

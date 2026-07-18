@@ -1,14 +1,23 @@
 # Growth Platform Architecture
 
-> **Version 6 — IMPLEMENTATION BASELINE** · Status: **review closed, owner inputs resolved 2026-07-18** · Owner: Sergej
-> **v5:** qualified-lead contract resolved (§4.4.1, D19); no historical data exists (§1.3, D21).
-> **v6:** scope corrected to **Czech market only, multiple businesses** (§1.2, D20 revised); plan restructured as **vertical feature slices with DOC→CONTRACT→IMPL→VERIFY gates** (§8.0, D22); communication channels elevated to prerequisites S2–S4 (D23); feature × service coverage matrix added (§8.3, D24).
-> **Next action: S1 gate 1 — write `shared/docs/growth/S1-approval-execution-governance.md`.**
-> Accepted as the implementation contract after a five-round adversarial review (ChatGPT Enterprise) plus four rounds of codebase verification. Three v1 decisions and four v2 details were overturned by evidence; v4 applies seven consistency corrections from the final review.
-> **No further architecture review before Phase 1. Implementation begins.**
-> Companion docs: [brief](GROWTH_PLATFORM_EXTERNAL_REVIEW_BRIEF.md) · [round 2](GROWTH_PLATFORM_REVIEW_ROUND2.md) · [round 4](GROWTH_PLATFORM_REVIEW_ROUND4.md)
+> **Version 7 — IMPLEMENTATION BASELINE** · **Review closed** · Owner: Sergej · 2026-07-18
 >
-> **v4 changelog:** (1) `tenantId` → `workspaceId` across all Growth contracts and events; (2) corrected the false claim that persisted grants prevent duplicate execution — added the mechanism-responsibility table; (3) explicit chargeback lifecycle event names with declared accounting semantics, no generic `payment.chargeback`; (4) `ConsentEvidenceReference` replaces copied consent state on events; (5) **durable edge→core event ingestion added to Phase 2** — CDN solves page availability, not event capture; (6) versioned `LeadQualificationEvent` contract; (7) BPCP evaluator extraction added to the backlog.
+> Accepted as the implementation contract after a **five-round adversarial review** (ChatGPT Enterprise) plus **four rounds of codebase verification**. Three v1 decisions and several v2–v6 details were overturned by evidence.
+>
+> **Scope of this document:** what is built and why. *How and when* live in [`../08_roadmap/DELIVERY_PLAN.md`](../08_roadmap/DELIVERY_PLAN.md) and [`../09_milestones/`](../09_milestones/).
+>
+> **Active milestone:** [MS-001 — Access and baseline](../09_milestones/MS-001-access-and-baseline.md). **Next action:** Google Ads account + credentials per [`../16_operations/PHASE0-ACCESS-TRACKER.md`](../16_operations/PHASE0-ACCESS-TRACKER.md).
+>
+> ### Change history
+>
+> | v | Change |
+> |---|---|
+> | v2 | External review incorporated; BPCP retirement, identity-consent boundary and cost-to-signal overturned |
+> | v3 | Order→lead attribution and Marketing's non-allocation found in code; v1 "attribution conflict" withdrawn |
+> | v4 | Seven consistency corrections: `workspaceId`, grant/dedup separation, chargeback lifecycle, consent evidence, durable ingestion, qualification contract, BPCP backlog |
+> | v5 | Qualified-lead contract resolved (§4.4.1, D19); no historical data exists (§1.3, D21) |
+> | v6 | Czech-only scope (§1.2, D20); vertical feature slices with gates (D22); coverage matrix (D24) |
+> | **v7** | **Readiness review applied:** S2–S4 off the critical path (MS-P) · pre-spend vs pre-monetary traceability split · Google Ads confirmed first platform (D-001) · engagement/qualification states separated · `approvedParametersHash` · workspace resolution (§4.4.2) · `ManualSpendObservation` (§4.5.1) · SPIKE gate · slice scope limited to required owners · Czech legal/consent/currency assumptions narrowed · editorial fixes |
 
 ---
 
@@ -45,16 +54,18 @@ Commercialisation later adds: enforced tenant resolution · tenant-aware unique 
 
 This is materially simpler than a multi-market design and the simplification is deliberate:
 
-- **One jurisdiction** — a single Czech counsel review covers all businesses (§7.10)
-- **One currency (CZK)** — no FX normalisation needed at stage 1, though the field stays (§7.6)
+- **One jurisdictional framework** — Czech counsel establishes the common baseline, but regulated sectors, specific claims and audience use may still need business-specific review. A dental-services ad and a software ad are not automatically covered by the same assessment
+- **CZK economics** — but connector onboarding must **verify the billing currency of each ad account**; do not assume an owner-owned account is billed in CZK. Currency stays explicit in every spend and revenue contract
 - **Sklik is usable** — Seznam covers Czechia, so it is a valid stage-1 connector
-- **One consent regime** — Czech DPA rules apply uniformly (§7.9)
+- **One jurisdiction for consent** — but requirements remain purpose-, vendor-, channel- and processing-specific. There is no single universal consent decision
 
 `workspaceId` still earns its place immediately: **one workspace = one business** (not business × market at this stage). The scoping mechanism is unchanged; only its cardinality is smaller.
 
 Platform scope: offers run on **our own ecosystem and applications**.
 
-> ⚠️ **Phase 0 selects one business, one market (CZ) and one ad platform.** Market fan-out is a post-stage-1 activity; when it happens, connectors, advertising law and ad accounts all become market-specific and each needs its own assessment.
+> ✅ **Decided — [D-001](../07_decisions/D-001-first-business-and-platform.md): first business **Bazos**, market **Czechia**, first platform **Google Ads**.** Sklik follows only after the Google write/reconciliation path is proven, so slice names S8–S10 are accurate as written. Market fan-out is a post-stage-1 activity; when it happens, connectors, advertising law and ad accounts all become market-specific.
+>
+> ⚠️ **Open for Bazos:** its `orders` integration covers *marketplace* orders. Whether **subscription revenue for the Bazos automation service itself** flows through the same path is unverified — resolve before MS-003 contracts. MS-002 is unaffected (its outcome is a qualified lead, not revenue).
 
 ### 1.3 There is no historical data — thresholds come from measurement, not history
 
@@ -86,7 +97,7 @@ catalog-microservice/k8s/configmap.yaml, external-secret.yaml
 
 v1 recommended retirement, inferred from *ClusterIP + one documented pilot*. That was reasoning from deployment topology instead of usage, and it was wrong. BPCP is consumed in production by `catalog-microservice` with a projection service and wired secrets. **See D3 (revised).**
 
-### 2.3 ⚠️ Two production outbox implementations already exist
+### 2.3 ⚠️ Multiple production outbox implementations already exist
 
 ```
 catalog-microservice/src/product-events/product-event-outbox.entity.ts + publisher + migration + specs
@@ -127,7 +138,7 @@ Additionally: `correlationId`/`causationId` exist in loggers and in `aukro`/`heu
 
 Present: webhook secret-token verification (`x-telegram-bot-api-secret-token`), user-ID allowlist (`authorizeTelegramUpdate(update, allowedUserIds)`), and `IdempotentTelegramCallbackDispatcher`.
 
-**Defect:** the dispatcher is constructed in-process (`new IdempotentTelegramCallbackDispatcher()`). **Idempotency is in-memory only** — it does not survive a pod restart or a second replica. Survivable at one replica today; becomes a **double-spend path** once approvals gate money. → Persisted grants (§4.3) are the fix.
+**Defect:** the dispatcher is constructed in-process (`new IdempotentTelegramCallbackDispatcher()`). **Idempotency is in-memory only** — it does not survive a pod restart or a second replica. Survivable at one replica today. It is a **duplicate-approval-processing** path — it becomes double-spend only if the execution layer lacks persistent uniqueness and reconciliation (§4.3). → Persisted grants (§4.3) are the fix.
 
 ### 2.9 `leads-microservice` — no attribution, strong foundation
 
@@ -284,16 +295,26 @@ interface ApprovalGrant {
   decisionArtefactId: string;
   permittedAction: string;      // e.g. "campaign.budget.increase"
   resourceId: string;
+  expectedResourceVersion?: string;
+  approvedParametersHash: string;   // canonical hash of the EXACT approved payload
   maximumAmount?: Money;
   validUntil: string;
   policyVersion: string;
   singleUse: boolean;
   issuedAt: string;
-  consumedAt?: string;          // set transactionally at execution
+  consumedAt?: string;          // transactional with LOCAL state only — never with the provider side effect
 }
 ```
 
-`growth-worker` validates the grant **immediately before** each external side effect.
+`growth-worker` validates the grant **immediately before** each external side effect, and must:
+
+1. Canonicalise the actual outbound action
+2. Compute its hash
+3. Match it against `approvedParametersHash`
+4. Check `expectedResourceVersion` where applicable
+5. **Reject execution if either differs**
+
+Without this, a grant stays technically valid while the underlying resource drifts — owner approves campaign X at 500 CZK with targeting v3, targeting changes, the worker submits a different payload against the same `resourceId`. The `DecisionArtefact` hash protects the *record*; `approvedParametersHash` protects the *side effect*.
 
 #### ⚠️ A grant alone does not prevent duplicate external execution
 
@@ -387,6 +408,8 @@ interface LeadQualificationEvent {
   reasonCodes: string[];
   decidedByType: "human" | "rule";
   decidedById?: string;
+  replyChannel?: "email" | "telegram" | "whatsapp" | "other";
+  replyObservedAt?: string;
   evidenceReferences: string[];
   occurredAt: string;
   correlationId: string;
@@ -416,7 +439,16 @@ A lead is `qualified` when **all three** hold:
 2. The request is described in detail
 3. **The lead has replied to us on any channel** — WhatsApp, Telegram or email
 
-Condition 3 makes qualification a two-way signal: a form submission alone is never qualified. Such a lead is `"warm"`.
+Condition 3 makes qualification a two-way signal: a form submission alone is never qualified.
+
+**Engagement and qualification are separate axes.** `"warm"` is not a qualification status and must not be added to one:
+
+```ts
+type QualificationStatus = "pending" | "qualified" | "disqualified";
+type EngagementStatus    = "new" | "contacted" | "replied" | "unresponsive";
+```
+
+A submitted lead is `qualification=pending, engagement=new`; after a reply `qualification=pending, engagement=replied`; only owner review sets `qualified | disqualified`. Mixing funnel position into the qualification outcome makes both unreadable.
 
 `decidedByType` is **always `"human"`** at v1. The owner marks qualified/disqualified **after working the lead**. No automated or rule-based qualification — v2 of the criteria may add it only after measuring rule precision against these human decisions.
 
@@ -427,6 +459,29 @@ Suggested `reasonCodes`: `COMPLETE_CONTACT` · `DETAILED_REQUEST` · `REPLIED_WH
 > ⚠️ **Verified gap — non-blocking at MVP, blocking at Phase 4.** Condition 3 depends on capturing inbound replies. Today: `notifications-microservice` has a Telegram inbound webhook (`telegram-bot.controller.ts`); **WhatsApp inbound does not exist**; `agentic-email-processing-system` triages email but has **no link to `leadId`**; `leads-microservice` has **no reply/inbound concept at all**.
 >
 > This does not block Phase 2, because qualification is manual — the owner knows a reply arrived, having received it personally. It **does** matter by Phase 4: offline conversion upload to Google/Meta is time-bounded from the click (~90 days), so manual qualification latency must stay inside that window. Automating reply→lead linkage becomes worthwhile only when manual turnaround approaches that limit.
+
+### 4.4.2 Resolving `workspaceId` for events that predate it
+
+Existing `order.created` carries only `leadId`, `source`, `campaignId`. Orders and payments do not know the Growth workspace. Resolution precedence is explicit and **never silently defaults**:
+
+```
+1. CampaignBinding by campaignId
+2. otherwise Lead by leadId
+3. otherwise Order attribution metadata
+4. zero matches     → UNRESOLVED_SCOPE
+5. multiple matches → AMBIGUOUS_SCOPE
+```
+
+```ts
+interface WorkspaceResolution {
+  sourceEventId: string;
+  workspaceId?: string;
+  resolutionMethod: "campaign_binding" | "lead" | "order_metadata" | "unresolved" | "ambiguous";
+  resolvedAt: string;
+}
+```
+
+Required even before SaaS: stage 1 already runs **multiple businesses**, so a silent default would cross-attribute one business's revenue to another.
 
 ### 4.5 Three distinct claims — never conflate them
 
@@ -458,6 +513,25 @@ interface CausalEstimate {
 ```
 
 Meanwhile: randomise landing/offer variants where *visitor and click* volume is adequate (they are the larger sample — §7.5), and use qualified-lead or booked-consultation outcomes where validated as revenue predictors — **without labelling them revenue incrementality**.
+
+### 4.5.1 Manual metric ingestion for the first experiment
+
+The first capped experiment runs before any connector. Its paid-media metrics still must reach the decision record:
+
+```
+Ad platform → owner exports/enters spend, clicks, impressions → ManualSpendObservation → Growth read model
+```
+
+```ts
+interface ManualSpendObservation {
+  observationId: string; workspaceId: string; experimentId: string;
+  platform: string; periodStart: string; periodEnd: string;
+  amount: Money; evidenceReference: string;   // provider report / export
+  enteredBy: string; enteredAt: string;
+}
+```
+
+Rules: always **labelled manual** · evidence references the provider report · **never presented as invoice-reconciled** · automated connector observations later **supersede rather than overwrite** them.
 
 ### 4.6 Money events are not final on arrival
 
@@ -533,12 +607,12 @@ payment.captured           increases captured revenue
 payment.refunded           decreases captured revenue (partial-capable)
 payment.chargeback_opened  records contingent exposure
 payment.chargeback_won     closes exposure without revenue loss
-payment.chargeback_lost    decreases recognised revenue
+payment.chargeback_lost    decreases recognised revenue — ONCE (unique on paymentId+kind)
 ```
 
 Whether an *opened* chargeback immediately reduces operational ROAS is a **declared accounting-policy decision**, recorded in the attribution model version — not a rule hidden inside a consumer.
 
-All Growth-domain events carry `workspaceId`, `correlationId`, `causationId`, and — where personal data is involved — a **consent evidence reference, not a copied consent record**:
+All Growth-domain events carry `workspaceId`, `correlationId`, `causationId` (**optional — root events have none**), and — where personal data is involved — a **consent evidence reference, not a copied consent record**:
 
 ```ts
 interface ConsentEvidenceReference {
@@ -702,102 +776,18 @@ Deterministic (non-LLM) checks before publication: unsupported claims · guarant
 
 ---
 
-## 8. Delivery model and plan
+## 8. Delivery model
 
-### 8.0 Delivery method (owner decision, 2026-07-18)
+> **The delivery model, feature slices, milestones and coverage matrix live in [`../08_roadmap/DELIVERY_PLAN.md`](../08_roadmap/DELIVERY_PLAN.md) and [`../09_milestones/`](../09_milestones/).**
+> This section keeps only what is architectural: the scope cut line.
 
-The project is large enough that ad-hoc implementation will not hold. **Work is organised as vertical feature slices, not service-by-service tasks.**
+Summary of the governing decisions (detail in the delivery plan):
 
-#### Four mandatory gates per slice
-
-Every slice passes through all four, in order. A slice is not "done" until gate 4 passes.
-
-```
-1. DOC       — full written specification of the slice, per phase
-2. CONTRACT  — types, events, API shapes, DB schema, error/edge conditions
-3. IMPL      — implementation across EVERY affected service, in one slice
-4. VERIFY    — automated tests + owner manual user-level check (both required)
-```
-
-Gate 1 and 2 artefacts live in `shared/docs/growth/<slice-id>-<name>.md`. No implementation begins before its contract document exists.
-
-#### Cross-service, not per-service
-
-A slice is a **capability**, delivered everywhere at once. Adding WhatsApp means adding it to `notifications`, `marketing`, `leads` and `growth` **in the same slice** — not "WhatsApp in notifications now, elsewhere later." Partial channel support across services is precisely the state that produces silent gaps.
-
-#### Verification is not optional
-
-Each slice defines, before implementation:
-- **automated**: unit + integration tests, and the cross-service path exercised end-to-end
-- **manual**: a concrete owner-performed user check ("send a WhatsApp message to a lead, see it recorded against `leadId` in leads, visible in marketing")
-
-A slice with passing tests but no owner check is **not** complete.
-
-#### Progress must be visible per feature × service
-
-The coverage matrix (§8.3) is the live status surface: which capability exists in which service, and where it is still missing.
-
----
-
-### 8.1 Feature slices
-
-| # | Slice | Services touched | Gate status |
-|---|---|---|---|
-| **S1** | Approval & execution governance — `DecisionArtefact` + hash, persisted `ApprovalGrant`, `ExecutionAttempt` + `effectKey`, global budget ceiling, provider-side limits, fix in-memory idempotency (§2.8), repoint runlayer escalations | goalkeeper · runlayer · growth-core | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S2** | **WhatsApp — full channel** (outbound exists; **inbound missing**) | notifications · marketing · leads · growth-core | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S3** | **Email as a system-wide channel** — decouple inbound-email from speakasap-only scoping; subscribe leads/growth to inbound webhooks | notifications · leads · marketing · growth-core · aeps | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S4** | **Inbound reply → `leadId` linkage** — all three channels; communication recorded via leads and/or marketing | leads · notifications · marketing | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S5** | Landing runtime + durable edge→core ingestion (§4.2), consent evidence, UTM + click-ID capture, `AnonymousTouchpoint`, `IdentityLink` | growth-web · growth-core · leads | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S6** | Lead qualification — `LeadQualificationEvent`, `criteriaVersion: v1-owner-manual` (§4.4.1), manual marking surface | leads · growth-core | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S7** | Money lifecycle — `payment.captured/refunded/chargeback_*`, `order.cancelled/returned`, net-revenue read model, populate `OrderLeadAttribution` (§2.10) | payments · orders · invoices · growth-core | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S8** | Google Ads connector — read-only metrics, `SpendObservation` + reconciliation | growth-core | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S9** | Google Ads connector — approved writes, execution reconciliation, connector failure states (§7.7) | growth-core · goalkeeper | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S10** | Conversion upload — internal ledger, `ConversionDestination`, consent filtering, dedup, diagnostics | growth-core · leads | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S11** | Decision recommendations — economic guardrails, sequential evidence, net ROAS, approval-required scale/kill | growth-core · goalkeeper | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S12** | AI generation — ad copy + landing text, deterministic claim checks, human review, full lineage | runlayer · growth-core · prompts | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **S13** | Sklik connector (CZ — valid at stage 1, §1.2) | growth-core | ☐ doc ☐ contract ☐ impl ☐ verify |
-| **B1** | BPCP consolidation — non-blocking backlog (D3): inventory consumers → extract evaluator to versioned package → compatibility tests → migrate goalkeeper + `catalog` → retire only on observed zero usage | bpcp · goalkeeper · catalog | ☐ doc ☐ contract ☐ impl ☐ verify |
-
-### 8.2 Sequencing
-
-Phase 0 stays non-code and runs in parallel from week 1: confirm legal entity + ad-account ownership · apply for platform access · re-verify §7.1 vendor claims · privacy policy + consent model · **select one business, one market (CZ), one ad platform**.
-
-```
-S1 ──► S5 ──► S6 ──► [FIRST CAPPED EXPERIMENT] ──► S7 ──► S8 ──► S9 ──► S10 ──► S11
-       ▲       ▲
-       └── S2, S3, S4 (communication channels — prerequisites for S6's reply condition)
-S12 early slice lands during S8–S10 · S13 after S9 · B1 any time after S1
-```
-
-**S2–S4 are elevated to prerequisites**, not later refinements: the qualified-lead definition (§4.4.1) requires a reply on WhatsApp, Telegram or email, so the channel and linkage work gates the first experiment's primary outcome.
-
-**The first capped experiment is the checkpoint to protect.** Testing measurement and acquisition can begin without complete money events (S7); automating decisions on net revenue cannot.
-
-### 8.3 Coverage matrix — feature × service
-
-Live status surface. `✅` in place · `🔨` in this slice · `❌` missing · `—` not applicable.
-
-| Capability | notifications | leads | marketing | growth-core | growth-web | goalkeeper | orders | payments |
-|---|---|---|---|---|---|---|---|---|
-| Telegram outbound | ✅ | — | ✅ | — | — | ✅ | — | — |
-| Telegram inbound | ✅ webhook | ❌ S4 | ❌ S4 | — | — | ✅ | — | — |
-| Email outbound | ✅ | ✅ | ✅ | — | — | — | — | — |
-| Email inbound | ✅ **exists** (webhook subs + S3 catchup, speakasap-scoped) | ❌ S3/S4 | ❌ S3/S4 | ❌ S3 | — | — | — | — |
-| WhatsApp outbound | ✅ send only | ❌ S2 | ❌ S2 | ❌ S2 | — | — | — | — |
-| WhatsApp inbound | ❌ **S2** | ❌ S2 | ❌ S2 | ❌ S2 | — | — | — | — |
-| Reply → `leadId` linkage | 🔨 S4 | 🔨 S4 | 🔨 S4 | — | — | — | — | — |
-| Persisted approvals + grants | — | — | — | 🔨 S1 | — | 🔨 S1 | — | — |
-| `ExecutionAttempt` / `effectKey` | — | — | — | 🔨 S1 | — | — | — | — |
-| Outbox pattern | ❌ | ❌ | ❌ | 🔨 S1 | — | ❌ | ✅ | ❌ |
-| Touchpoint capture | — | 🔨 S5 | — | 🔨 S5 | 🔨 S5 | — | — | — |
-| Consent evidence record | ❌ S5 | 🔨 S5 | ❌ S5 | 🔨 S5 | 🔨 S5 | — | — | — |
-| Lead qualification events | — | 🔨 S6 | — | 🔨 S6 | — | — | — | — |
-| Lead → order attribution | — | 🔨 S7 | — | 🔨 S7 | — | — | ✅ **exists** | — |
-| Money reversal events | — | — | — | 🔨 S7 | — | — | 🔨 S7 | 🔨 S7 |
-| Ad platform connector | — | — | — | 🔨 S8/S9 | — | — | — | — |
-| Conversion upload | — | 🔨 S10 | — | 🔨 S10 | — | — | — | — |
-
-> Two entries corrected against the code and worth noting: **inbound email infrastructure already exists** in `notifications-microservice` (`inbound-email.controller.ts`, `inbound-email.service.ts`, `webhook-subscription.service.ts`, `s3-unprocessed-catchup.scheduler.ts`) — it is generic webhook-subscription based, currently scoped to `@speakasap.com`. S3 is therefore **re-scoping and subscribing**, not building from zero. And **`OrderLeadAttribution` already exists** in orders (§2.10). WhatsApp inbound is the only genuinely absent channel.
+- Work is organised as **vertical feature slices**, gated **SPIKE (optional) → DOC → CONTRACT → IMPL → VERIFY**. Coding is last.
+- **SPIKE** exists because a contract written before touching an unknown external API encodes guesses rather than reality. Time-boxed, disposable, no production side effect, no real spend.
+- A slice covers **only the services required for its declared user outcome** — never every service that might later consume it. Each slice document lists required owners, required consumers, optional future consumers, and explicitly excluded services.
+- DOC and CONTRACT stay **separate** documents: the readers are multiple AI agents starting cold, and explicit contracts prevent divergence between implementations.
+- Parallel work follows `/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md` — declared allowed/forbidden files, one integration owner, defined merge order. Milestones (`../09_milestones/`) are the synchronisation points.
 
 ### 8.1 Scope cut line (explicit, for one developer)
 
@@ -810,7 +800,8 @@ Live status surface. `✅` in place · `🔨` in this slice · `❌` missing · 
 | Global budget ceiling | **Yes** | Internal **and** provider-side |
 | Emergency kill switch | **Yes** | Cannot be the only protection — cluster may be down |
 | Consent record on tracking events | **Yes** | Structured, not Boolean |
-| Correlation touchpoint→lead→order→payment | **Yes** | Otherwise later attribution is impossible |
+| Correlation **touchpoint → lead** | **Yes** | Acquisition traceability; cannot be reconstructed later |
+| Correlation **lead → order → payment → refund** | **No** — MS-003 | Required before net ROAS, value-based upload, revenue scaling, profitability policy training. The first experiment's outcome is a qualified lead, not revenue |
 | Version *identifiers* | **Yes** | `experimentVersion`, `landingVersion`, `creativeVersion`, `policyVersion`, `attributionModelId`/`Version`, `decisionArtefactId` — cheap now, unrecoverable later |
 | Spend observations | **Yes, before metric ingestion** | Invoice reconciliation + credit modelling may follow |
 | Connector execution journal | **Yes, before API writes** | Generic connector state-machine framework may wait |
@@ -846,9 +837,9 @@ Live status surface. `✅` in place · `🔨` in this slice · `❌` missing · 
 | D17 | — | **NEW (v3)** — Provider-side spend limits are the first line of defence; local controls the second | §7.6 |
 | D18 | — | **RESOLVED (v3)** — Marketing performs no allocation; Growth supplies paid-channel facts via the existing `ExternalAttributionFact.sourceService` seam. v1's "attribution conflict" withdrawn | §2.11 |
 | D19 | — | **NEW (v5)** — Qualified lead = complete contact + detailed request + **replied on any channel**. Manual marking by owner only, after working the lead. Form validity is a separate frontend stage, not qualification. No business-existence check. Quality over volume | §4.4.1 |
-| D20 | — | **NEW (v5)** — Multiple businesses × markets: one workspace per business×market. Connectors, advertising law and ad accounts are all market-specific. **Phase 0 selects one business, one market, one platform** | §1.2 |
+| ~~D20 (v5)~~ | — | *Superseded:* multi-market form withdrawn — see the v6 D20 below | — |
 | D21 | — | **NEW (v5)** — No historical data exists. All volume estimates withdrawn; Phase 5 thresholds derive from first-experiment measurement | §1.3 |
-| D20 | *(revised v6)* | **Stage 1 is Czech-only, multiple businesses.** One jurisdiction, one currency, Sklik usable. `workspaceId` = one business. Other markets only after stage 1 | §1.2 |
+| D20 | *(v5 multi-market form superseded)* | **Stage 1 is Czech-only, multiple businesses.** One jurisdiction, one currency, Sklik usable. `workspaceId` = one business. Other markets only after stage 1 | §1.2 |
 | D22 | — | **NEW (v6)** — Delivery is by **vertical feature slice across all services**, with four mandatory gates: DOC → CONTRACT → IMPL → VERIFY. Verification requires both automated tests **and** an owner manual check | §8.0 |
 | D23 | — | **NEW (v6)** — Communication channels (WhatsApp inbound, system-wide email, reply→`leadId` linkage) are **prerequisites S2–S4**, not later refinements — the qualified-lead definition depends on them | §8.1–8.2 |
 | D24 | — | **NEW (v6)** — Progress is tracked in a live feature × service coverage matrix | §8.3 |
