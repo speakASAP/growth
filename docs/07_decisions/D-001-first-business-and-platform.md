@@ -15,18 +15,32 @@ Sklik follows only after the Google write and reconciliation path is proven (F-0
 
 So the hypothesis under test is lead generation for a **B2B/B2C SaaS offering**, and the conversion outcome is a qualified lead for that service — consistent with `criteriaVersion: v1-owner-manual`.
 
-## Revenue path — verified, with one open question
+## Revenue path — RESOLVED, and it is worse than first read
 
-✅ Bazos **is** wired to `orders-microservice`:
+An earlier draft recorded Bazos as "wired to `orders-microservice`" on the strength of `bazos/shared/clients/order-client.service.ts` and an orders URL in `k8s/configmap.yaml`.
 
-```
-bazos/shared/clients/order-client.service.ts
-bazos/k8s/configmap.yaml            (orders service URL configured)
-```
+**Owner correction, 2026-07-18: Bazos does not use orders at all yet.** The client and config are scaffolding — present but unused. Wiring ≠ usage, and I read the first as the second.
 
-This is materially better than speakasap/marathon/chytrakoupe/cliplot, which have no `orders` integration at all. Choosing Bazos avoids the blocking revenue-visibility gap for stage 1.
+So Bazos has **no revenue rail today**:
 
-⚠️ **Open question, must be resolved before MS-003.** The `orders` module (at the stale path `bazos/services/aukro-service/src/aukro/orders/`) is Bazos's own — but bazos.cz is a *classifieds* site with no marketplace checkout: buyers contact sellers directly. So what "orders" means there needs establishing, and separately whether **subscription revenue from customers of the Bazos automation tool** produces any order or payment event at all.
+| | |
+|---|---|
+| Orders from Bazos listings | bazos.cz is classifieds — buyers contact sellers directly, there is no checkout |
+| Subscription revenue for the automation tool | no billing mechanism identified |
+| Events reaching `growth` | **none** |
+
+### Consequence for the plan
+
+**MS-002 is unaffected** — its primary outcome is a qualified lead, revenue is shown as provisional gross entered manually. The first experiment can run exactly as designed.
+
+**MS-003 changes shape for Bazos.** It is no longer "emit `revenue.recognised` from an existing path" — there is no path. Before Bazos revenue can be attributed, someone must first decide *how the Bazos automation service is sold and billed at all*. That is a product decision, not an integration task.
+
+Options when MS-003 approaches:
+- **(i)** Build billing for the Bazos service, then emit `revenue.recognised` from it
+- **(ii)** Run MS-003 against a business that already has a live revenue path (flipflop), keeping Bazos as the MS-002 acquisition experiment only
+- **(iii)** Keep Bazos on qualified-lead economics indefinitely and defer revenue attribution
+
+**(ii) is the lower-risk sequencing** — it decouples proving the revenue contract from building a new billing system. Decide before MS-003 contracts are written.
 
 These are different money:
 
