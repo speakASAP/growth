@@ -39,11 +39,24 @@ Credentials live in Vault at `secret/prod/growth`. Claude reads Vault directly �
 
 Legend: ⬜ not started · 🔄 owner done, awaiting verification · ✅ verified · ⚠️ blocked
 
-## Facts to confirm against live vendor docs
+## Google Ads — verified against developers.google.com, 2026-07-18
 
-Sourced from the external review (primary citations), but **re-confirm before committing to any timeline** — access tiers and cutoffs move:
+**API Center: `https://ads.google.com/aw/apicenter`** — requires signing in with a **manager account (MCC)**. Not reachable from a plain Ads account.
 
-- Google Ads tiers Test / Explorer / Basic / Standard; Explorer 2,880 and Basic 15,000 daily production operations. **Explorer or Basic is the realistic target — Standard is likely unnecessary.**
+| Tier | Prod ops/day | Review | Notes |
+|---|---|---|---|
+| Test | — (15k on test accounts) | automatic on sign-up | test accounts only |
+| **Explorer** | **2,880** | may be auto-granted | ⚠️ **blocks account creation, user management, planning tools, billing** |
+| **Basic** | **15,000** | ~5 business days | brand verification of GCP project recommended |
+| Standard | unlimited | ~10 business days | large enterprises / multi-user tools |
+
+⚠️ **Tiers are sequential** — each requires the previous one's approval. You cannot apply straight to Basic; expect Test → Explorer → Basic.
+
+⚠️ **Explorer blocks planning tools = no Keyword Planner API.** If keyword research is to be automated (F-012 AI generation), **Basic is required, not optional**. Plan the ~5-day review into the schedule rather than discovering it at F-012.
+
+Prerequisites before applying, per Google: verify current access level · keep API contact email current · **link all active Google Ads accounts to the manager account**.
+
+## Other vendor facts — re-confirm before committing
 - **15 June 2026 restriction**: tokens without prior qualifying offline-conversion activity are routed to the **Data Manager API** rather than new `UploadClickConversions` integrations. **Affects the S10 adapter choice — confirm before building.**
 - Meta: Standard Access with `ads_read` + `ads_management` is sufficient for the app owner's own ad account; Advanced Access only for third-party accounts. *(Cited to Meta's Postman namespace — worth one confirmation against Meta's own docs, since the internal-first decision rests on it.)*
 
