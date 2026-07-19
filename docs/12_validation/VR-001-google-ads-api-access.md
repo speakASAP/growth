@@ -18,7 +18,7 @@
 | Google Cloud project | `alfares-489917` / number `736358823451` | GCP console project card |
 | Google Ads API in project | **Enabled** | API details page: `Status: Enabled`, «Disable API» present |
 | OAuth client | Desktop app, created 2026-07-19 | GCP → Clients |
-| OAuth publishing status | **Testing** | Google Auth Platform → Audience |
+| OAuth publishing status | **In production** *(was Testing until 2026-07-19)* | Google Auth Platform → Audience |
 | OAuth test user | `ssfskype@gmail.com` added | Audience → Test users |
 | Basic access application | **submitted** | Owner confirmed |
 
@@ -31,8 +31,17 @@ GOOGLE_ADS_CLIENT_SECRET        ✅
 GOOGLE_ADS_LOGIN_CUSTOMER_ID    ✅  3824091750
 GOOGLE_CLOUD_PROJECT_ID         ✅  alfares-489917
 GOOGLE_CLOUD_PROJECT_NUMBER     ✅  736358823451
-GOOGLE_ADS_REFRESH_TOKEN        ✅  obtained 2026-07-19 (len 103)
+GOOGLE_ADS_REFRESH_TOKEN        ✅  reissued 2026-07-19 after publication (len 103)
 ```
+
+**The first token was issued while the app was still *Testing*, which caps refresh-token life at
+7 days.** Publishing to *In production* does not extend a token already issued under Testing, so the
+token was reissued after publication and re-verified. The current token expires only on revocation.
+
+The consent screen still shows «Google hasn't verified this app» — expected, since `adwords` is a
+sensitive scope and verification was not pursued. Verification affects the warning and the 100-user
+cap, neither of which binds a single-owner internal integration; it is not a prerequisite for
+*In production*.
 
 ---
 
