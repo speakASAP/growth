@@ -73,7 +73,8 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 
 | # | Slice | Required owners | Milestone | Status |
 |---|---|---|---|---|
-| **S1** | Approval & execution governance — `DecisionArtefact` + hash, persisted `ApprovalGrant` + `approvedParametersHash`, `ExecutionAttempt` + `effectKey`, global budget ceiling, fix in-memory idempotency | goalkeeper · growth-core | M1 | ◷ |
+| **S1a** | **Decision record** — `DecisionArtefact` + canonical hash | growth-core | M1 | 🔨 **DOC готов** — [F-001](../10_features/F-001-decision-record-and-governance.md) |
+| **S1b** | Execution governance — `ApprovalGrant` + `approvedParametersHash`, `ExecutionAttempt` + `effectKey`, budget ceilings, fix in-memory idempotency | goalkeeper · growth-core | **M3** — не нужен до первой записи в API | ◷ |
 | **S5** | Landing runtime, durable edge→core ingestion, consent evidence, UTM + click-ID, `AnonymousTouchpoint`, `IdentityLink` | growth-web · growth-core · leads | M1 | ◷ |
 | **S6** | Qualification — `LeadQualificationEvent`, `criteriaVersion: v1-owner-manual`, manual marking surface, `ManualSpendObservation` | leads · growth-core | M1 | ◷ |
 | **S7** | **Universal revenue adapter** — canonical `revenue.recognised`, flipflop as first client (§6) | orders · payments · growth-core · flipflop | M2 | ◷ |
