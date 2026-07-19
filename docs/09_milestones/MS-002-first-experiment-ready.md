@@ -22,7 +22,7 @@ This is the milestone to protect. A real experiment with real attribution using 
 | 7 | `AnonymousTouchpoint` → `IdentityLink` → `Lead` traceable end-to-end | Owner manual check | ☐ |
 | 8 | `LeadQualificationEvent` with declared `criteriaVersion` | Contract test | ☐ |
 | 9 | `ManualSpendObservation` accepts owner-entered spend | Owner manual check | ☐ |
-| 10 | Provider-side lifetime + daily cap and end date set | Reference recorded | ☐ |
+| 10 | **Провайдерские лимиты** — дневной бюджет, общий бюджет, дата окончания кампании | Перенесено из MS-001: до создания кампании лимитировать нечего. Настраивается в момент создания, ДО запуска | ☐ |
 | 11 | **One capped experiment executed end to end** | Owner report + attribution rows | ☐ |
 
 ## Scope boundaries — deliberately excluded

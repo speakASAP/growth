@@ -53,8 +53,15 @@ def read_credentials() -> tuple[str, str]:
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
-        params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-        _result.update({k: v[0] for k, v in params.items()})
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        # Ignore favicon and any other stray request — only the callback carries code/error.
+        if "code" in params or "error" in params:
+            _result.update({k: v[0] for k, v in params.items()})
+        elif parsed.path != "/":
+            self.send_response(404)
+            self.end_headers()
+            return
         ok = "code" in params
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -82,7 +89,9 @@ def main() -> None:
     })
 
     server = http.server.HTTPServer(("localhost", PORT), Handler)
-    threading.Thread(target=server.handle_request, daemon=True).start()
+    # serve_forever, not handle_request: the browser may issue several requests
+    # (favicon, prefetch) and we must keep listening until the real callback arrives.
+    threading.Thread(target=server.serve_forever, daemon=True).start()
 
     print(f"Opening browser for consent (listening on {REDIRECT_URI}) …")
     print("If the browser does not open, visit this URL manually:\n")
@@ -92,12 +101,14 @@ def main() -> None:
     except Exception:
         pass
 
-    server_thread_timeout = 300
-    threading.Event().wait(timeout=0.1)
+    server_thread_timeout = 240
     waited = 0
     while "code" not in _result and "error" not in _result and waited < server_thread_timeout:
         threading.Event().wait(1)
         waited += 1
+        if waited % 30 == 0:
+            print(f"  … waiting for consent ({waited}s)", flush=True)
+    server.shutdown()
 
     if "error" in _result:
         sys.exit(f"authorisation denied: {_result['error']}")

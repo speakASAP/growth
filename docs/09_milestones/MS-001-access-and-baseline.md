@@ -17,12 +17,12 @@ No implementation work in this milestone. Spikes only.
 | 1 | First business selected | **Bazos** — [D-001](../07_decisions/D-001-first-business-and-platform.md) | ✅ |
 | 2 | Market confirmed as CZ | Architecture §1.2 | ✅ |
 | 3 | First ad platform explicitly chosen | Decision recorded in `docs/07_decisions/` | ☐ |
-| 4 | Legal entity + ad-account ownership confirmed | Owner statement | ☐ |
-| 5 | Google Ads developer token — access level confirmed **by a real API call** | Response captured in `docs/12_validation/` | ☐ |
-| 6 | Meta app + Business Verification status confirmed | Response captured | ☐ |
-| 7 | Sklik API access assessed | Spike findings doc | ☐ |
-| 8 | Czech consent baseline + privacy policy live | URL + counsel note | ☐ |
-| 9 | Provider-side spend limits configured | Screenshot/export reference | ☐ |
+| 4 | Legal entity + ad-account ownership confirmed | Alfares s.r.o. | ✅ |
+| 5 | Developer token — access level confirmed **by a real API call** | ✅ HTTP 200, v21, Explorer — [VR-001](../12_validation/VR-001-google-ads-api-access.md) | ✅ |
+| 6 | ~~Meta app~~ — отложено, нужен только для второй платформы | — | ◷ |
+| 7 | ~~Sklik~~ — отложено до F-013 | — | ◷ |
+| 8 | Privacy policy live + юридически проверена | ✅ https://alfares.cz/legal/privacy-policy — HTTP 200, владелец подтвердил юрпроверку | ✅ |
+| 9 | ~~Provider-side spend limits~~ — **перенесено в MS-002** | Невыполнимо в MS-001: нет кампаний и нет способа оплаты. См. ниже | ➡️ |
 | 10 | Durable edge-ingestion implementation selected | Decision recorded | ☐ |
 
 ## Resolved — first business and platform
@@ -46,10 +46,28 @@ Division of labour, stated accurately:
 | Execute API call, capture response, record access tier and real quotas | **Claude** |
 | Record the finding as a validation report | **Claude** |
 
-## Blockers
+## Статус: основное закрыто
 
-- [MISSING: Google Ads account + developer token] — items 4–6
-- [UNKNOWN: Bazos service-subscription billing path] — resolve before MS-003
+Доступ к Google Ads API получен и **подтверждён реальным вызовом**, не интерфейсом. Иерархия аккаунтов приведена в порядок. Заявка на Basic отправлена.
+
+## Почему пункт 9 перенесён в MS-002
+
+Проверено в аккаунте `277-138-1970` (2026-07-19): доступных средств `0,00 CZK`, платежей никогда не было, все месяцы по нулям, кампаний нет.
+
+Провайдерские лимиты в Google Ads задаются **на уровне кампании** — дневной бюджет, общий бюджет, дата окончания. Настоящего «лимита трат аккаунта» для карточных аккаунтов не существует; он есть только при ежемесячном выставлении счетов.
+
+Следовательно: **пока нет кампаний, лимитировать нечего.** Критерий был сформулирован неверно — он принадлежит моменту создания кампании, то есть MS-002.
+
+Текущее состояние при этом **максимально безопасно**: аккаунт без способа оплаты физически не может потратить ничего. Это более сильная гарантия, чем любой настроенный лимит.
+
+Требование §7.6 архитектуры («провайдерские лимиты — первая линия защиты») остаётся в силе и переносится в MS-002 как обязательное условие перед запуском первой кампании.
+
+## Остаётся
+
+- [TODO: consent baseline на лендинге] — политика опубликована, но механизм согласия на самом лендинге ещё не проверен (пункт 12)
+- [TODO: выбрать реализацию durable edge-ingestion] — пункт 10
+- [RISK: OAuth в статусе Testing] — refresh token живёт 7 дней; оценить переход в *In production* до MS-002
+- [UNKNOWN: путь выручки Bazos] — подписка на сервис автоматизации не проходит через `orders`; блокирует MS-003, не MS-002 (см. [D-001](../07_decisions/D-001-first-business-and-platform.md))
 
 ## Next action
 
