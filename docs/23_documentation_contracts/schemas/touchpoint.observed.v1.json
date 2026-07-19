@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfares.cz/schemas/growth/touchpoint.observed.v1.json",
+  "title": "Touchpoint observed",
+  "description": "Anonymous landing view. No contact details - sessionId is the only handle.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "workspaceId",
+    "correlationId",
+    "dataClass",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "growth.touchpoint.observed.v1"
+    },
+    "eventVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "growth-web"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": "string",
+      "description": "OPTIONAL - root events have none"
+    },
+    "dataClass": {
+      "const": "anonymous"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "experimentId",
+        "experimentVersion",
+        "landingVersionId",
+        "consentEvidence"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "issued only after consent"
+        },
+        "experimentId": {
+          "type": "string"
+        },
+        "experimentVersion": {
+          "type": "string"
+        },
+        "landingVersionId": {
+          "type": "string",
+          "description": "immutable - a change creates a new id"
+        },
+        "gclid": {
+          "type": "string"
+        },
+        "fbclid": {
+          "type": "string",
+          "description": "reserved, unused at stage 1"
+        },
+        "utm": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "medium": {
+              "type": "string"
+            },
+            "campaign": {
+              "type": "string"
+            },
+            "term": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            }
+          }
+        },
+        "referrer": {
+          "type": "string"
+        },
+        "consentEvidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "consentRecordId",
+            "consentVersion",
+            "applicablePurposes",
+            "statusAtEventTime",
+            "evaluatedAt"
+          ],
+          "properties": {
+            "consentRecordId": {
+              "type": "string"
+            },
+            "consentVersion": {
+              "type": "integer"
+            },
+            "applicablePurposes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "statusAtEventTime": {
+              "enum": [
+                "granted",
+                "denied",
+                "withdrawn",
+                "not_required"
+              ]
+            },
+            "evaluatedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    }
+  }
+}

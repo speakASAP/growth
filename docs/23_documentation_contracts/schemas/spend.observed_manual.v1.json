@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfares.cz/schemas/growth/spend.observed_manual.v1.json",
+  "title": "Manual spend observation",
+  "description": "Owner-entered spend before any connector exists. Superseded, never overwritten, by connector observations.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "workspaceId",
+    "correlationId",
+    "dataClass",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "growth.spend.observed_manual.v1"
+    },
+    "eventVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "growth-core"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": "string",
+      "description": "OPTIONAL - root events have none"
+    },
+    "dataClass": {
+      "const": "operational"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observationId",
+        "experimentId",
+        "platform",
+        "periodStart",
+        "periodEnd",
+        "amount",
+        "evidenceReference",
+        "enteredBy",
+        "enteredAt",
+        "isManual"
+      ],
+      "properties": {
+        "observationId": {
+          "type": "string"
+        },
+        "experimentId": {
+          "type": "string"
+        },
+        "platform": {
+          "const": "google_ads"
+        },
+        "periodStart": {
+          "type": "string",
+          "format": "date"
+        },
+        "periodEnd": {
+          "type": "string",
+          "format": "date"
+        },
+        "amount": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "currency"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "pattern": "^-?\\d+(\\.\\d{1,4})?$",
+              "description": "decimal STRING - never a float, cents are lost in IEEE-754"
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            }
+          }
+        },
+        "evidenceReference": {
+          "type": "string",
+          "description": "provider report / export identifier"
+        },
+        "enteredBy": {
+          "type": "string"
+        },
+        "enteredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "isManual": {
+          "const": true,
+          "description": "never presented as invoice-reconciled"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfares.cz/schemas/growth/lead.created_from_registration.v1.json",
+  "title": "Lead created from registration",
+  "description": "Anchors LeadQualificationEvent as a post-hoc quality assessment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "workspaceId",
+    "correlationId",
+    "dataClass",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "growth.lead.created_from_registration.v1"
+    },
+    "eventVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "leads-microservice"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": "string",
+      "description": "OPTIONAL - root events have none"
+    },
+    "dataClass": {
+      "const": "personal"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "leadId",
+        "registrationId",
+        "sourceService",
+        "createdAt"
+      ],
+      "properties": {
+        "leadId": {
+          "type": "string"
+        },
+        "registrationId": {
+          "type": "string"
+        },
+        "sourceService": {
+          "const": "bazos-service"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

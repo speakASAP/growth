@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfares.cz/schemas/growth/registration.completed.v1.json",
+  "title": "Registration completed",
+  "description": "The conversion signal. gsid is passed raw - bazos-service does not hold the signing secret.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "workspaceId",
+    "correlationId",
+    "dataClass",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "growth.registration.completed.v1"
+    },
+    "eventVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "bazos-service"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": "string",
+      "description": "OPTIONAL - root events have none"
+    },
+    "dataClass": {
+      "const": "personal"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registrationId",
+        "email",
+        "registeredAt"
+      ],
+      "properties": {
+        "registrationId": {
+          "type": "string"
+        },
+        "gsid": {
+          "type": "string",
+          "description": "signed session token, raw and UNVERIFIED. Absent is a valid expected case (consent refused / cookie cleared / direct visit) - NOT an error"
+        },
+        "gsidSource": {
+          "enum": [
+            "cookie",
+            "query"
+          ]
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "phone": {
+          "type": "string",
+          "pattern": "^\\+[1-9]\\d{6,14}$",
+          "description": "E.164"
+        },
+        "registeredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

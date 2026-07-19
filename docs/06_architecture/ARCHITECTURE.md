@@ -280,7 +280,13 @@ growth-web → edge/event collector → durable append-only buffer
 
 Requirements: the collector acknowledges **only after durable persistence** · every event carries an immutable `eventId` · browser retries reuse the same `eventId` · the ingestion worker is idempotent · buffered events replay after k3s recovery · consent is evaluated **before** any prohibited vendor transmission · the collector stores no unnecessary PII.
 
-This need not be another microservice in the main cluster — an edge function with durable queue/storage, or any independently recoverable endpoint, satisfies it. **The implementation is open; the durability requirement is not.**
+**Implementation chosen ([D-002c](../07_decisions/D-002-landing-conversion-and-buffer.md), 2026-07-19): Postgres on `database-server`.**
+
+State the limitation honestly: this buffer shares a failure domain with `growth-core`. It protects against pod restarts, deploys and RabbitMQ gaps — the common failures — but **not** against the node-level outage this section was originally written for. Accepted for MVP because the first experiments run under a manual budget cap with human observation.
+
+`F-005` defines the ingestion interface so the storage behind it can be swapped for an edge queue without touching producers or consumers. Revisit before experiments run unattended.
+
+**The experiment landing is a clone of the production page** ([D-002b](../07_decisions/D-002-landing-conversion-and-buffer.md)), carrying an immutable `landingVersionId`. Cloning preserves the legal completeness the live page already has; a from-scratch page would reopen compliance work for no measurement benefit.
 
 Provider-side conversion tracking remains an independent validation path. It must never substitute for the canonical internal event stream.
 
@@ -420,6 +426,8 @@ interface LeadQualificationEvent {
 Rules: criteria are **versioned** · a status correction emits a **new event**, never a mutation · the first experiment **declares its `criteriaVersion` before launch** · results report both lead count *and* qualified-lead count · automated qualification is deferred until its precision is measured against human decisions.
 
 Fits the existing `LeadLifecycleEvent` grain in `leads-microservice` (§2.9).
+
+> ⚠️ **Superseded as the primary metric by [D-002a](../07_decisions/D-002-landing-conversion-and-buffer.md), 2026-07-19.** The experiment's conversion signal is now **registration** — immediate and automatic. Qualification below is retained as a *post-hoc quality assessment*, not the primary outcome, because manual latency does not fit the offline-conversion upload window.
 
 #### `criteriaVersion: "v1-owner-manual"` — owner decision, 2026-07-18
 
@@ -772,7 +780,9 @@ Preserve for every generated asset: model + version, prompt version, source mate
 
 Deterministic (non-LLM) checks before publication: unsupported claims · guarantees · comparative claims · prices/conditions · trademarks · regulated products · health claims · financial claims · employment/housing/political targeting · required disclaimers.
 
-> ⚠️ **An LLM review is not a compliance control.** AI Act Article 50 transparency obligations and Czech advertising law (including sector-specific health-advertising restrictions and a 2026 amendment under consideration) require **a Czech lawyer's review before any regulated-sector ad ships** — not model output, including the model output in this document.
+> ⚠️ **An LLM review is not a compliance control.** AI Act Article 50 transparency obligations and Czech advertising law require **a Czech lawyer's review before any regulated-sector ad ships** — not model output, including the model output in this document.
+>
+> ✅ **Partially closed 2026-07-19:** the Bazos landing publishes `/cs/legal/eu-ai-act-compliance` alongside privacy, cookie, GDPR and terms documents, with operator identity and a "not affiliated with Bazoš.cz" disclaimer. Owner confirms legal review. This covers the stage-1 business; a new regulated sector would need its own assessment.
 
 ---
 
