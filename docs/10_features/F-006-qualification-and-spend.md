@@ -34,7 +34,8 @@ The slice is now **two small surfaces**, not a subsystem.
 | Service | Change |
 |---|---|
 | `growth-core` | `ManualSpendObservation` intake; experiment view showing cost per registration and per qualified lead |
-| `leads-microservice` | `LeadQualificationEvent` persistence + qualification surface |
+| `leads-microservice` | `LeadQualificationEvent` persistence on top of the **existing** status handling |
+| CRM frontend (client panel) | Expose qualification in the custom CRM the owner already uses |
 
 ### Explicitly excluded
 
@@ -59,7 +60,18 @@ Rules carried from architecture §4.5.1:
 - `evidenceReference` points at the provider report or export the number came from
 - connector observations later **supersede** manual ones — never overwrite, both remain visible
 
-### 2. Qualification
+### 2. Qualification — in the existing CRM, not a new surface
+
+**Owner decision 2026-07-19:** qualification happens in the **custom CRM in the client panel**, where the owner already changes statuses by hand wherever automation does not cover them. No separate qualification UI is built.
+
+This shrinks the slice again. `leads-microservice` already carries lead status:
+
+```
+leads-microservice/src/leads/leads.controller.ts   PATCH /leads/:id  → status
+leads-microservice/src/leads/integrations/lifecycle-event-router.service.ts
+```
+
+So the work is **not** "build qualification" — it is "make the existing status change emit a versioned, immutable qualification event, and show the two axes in the CRM."
 
 The owner works a registered lead, then records a judgement. Criteria are `v1-owner-manual` ([D19](../06_architecture/ARCHITECTURE.md)):
 
@@ -94,9 +106,17 @@ Experiment · Bazos · CZ · 2026-07-19
 
   qualified                         7
   disqualified                     11
-  pending                           6
-  cost per qualified lead       2 143 CZK
+  pending                           6          ← counted against cost, not as qualified
+  cost per qualified lead       2 143 CZK      ← 15 000 / 7
 ```
+
+### Pending counts against cost — owner decision 2026-07-19
+
+`cost per qualified lead = total spend / qualified count`. Registrations still `pending` are **not** excluded from the numerator.
+
+This is the conservative reading and it is the honest one: you paid for those clicks whether or not the lead was ever worked. Excluding unworked leads would flatter the metric exactly when the owner is behind on working them — the moment the number most needs to be pessimistic.
+
+Consequence to watch: a backlog of `pending` makes cost-per-qualified look worse than the experiment deserves. The `pending` count sits next to the metric so the cause is visible rather than inferred.
 
 **The attributed/unattributed split is not optional.** No consent means no `gsid` means no attribution ([D-003](../07_decisions/D-003-session-propagation-retention-buffer.md) §Q2). Measured conversions are structurally lower than actual, and a cost-per-registration read without that split will look worse than reality. Showing one number without the other invites a wrong kill decision.
 
@@ -104,10 +124,14 @@ Experiment · Bazos · CZ · 2026-07-19
 
 ## Open questions — resolve before CONTRACT
 
-1. **Where does the owner qualify leads?** Existing `leads-microservice` admin surface, a new view in growth, or Telegram? Telegram fits the ecosystem's approval pattern and the owner's phone-first habit — but it needs a persistent callback store, and `goalkeeper`'s dispatcher is currently in-memory (architecture §2.8).
-2. **Is `pending` allowed to be terminal?** A lead nobody ever works stays `pending` forever. Does it count against cost-per-qualified, or is it excluded? Affects whether the metric is honest.
-3. **Spend granularity** — per day, or per campaign per day? Per-campaign is needed once more than one campaign runs per experiment; per-day is enough for the first run.
-4. **Who may qualify?** Owner only at v1, or any authenticated operator? Affects whether `decidedById` needs an identity beyond "the owner".
+1. ✅ ~~Where does the owner qualify leads?~~ — **custom CRM in the client panel**, existing surface, manual status change
+2. ✅ ~~Is `pending` terminal / does it count?~~ — **counts against cost per qualified lead**
+3. **Spend granularity** — per day, or per campaign per day? Per-campaign is needed once more than one campaign runs per experiment; per-day is enough for the first run
+4. **Who may qualify?** Owner only at v1, or any authenticated operator? Affects whether `decidedById` needs an identity beyond "the owner"
+
+### Still to confirm
+
+Which frontend hosts the CRM. `bazos-service` serves `/admin` and `/client` (`ui.controller.ts`), and `leads-microservice` holds the lead data — so the CRM either reads leads over the API from the Bazos admin panel, or lives elsewhere. This decides whether `bazos-service` joins the required owners.
 
 ---
 
@@ -123,6 +147,7 @@ Experiment · Bazos · CZ · 2026-07-19
 | Superseding | A later connector observation supersedes a manual one; both remain queryable |
 | Attribution split | The view reports attributed and unattributed counts separately |
 | Division safety | Zero qualified leads → cost per qualified renders as "—", not a division error |
+| Pending accounting | Spend on `pending` leads stays in the numerator; changing a lead to qualified lowers cost-per-qualified |
 
 ### Owner manual check
 
