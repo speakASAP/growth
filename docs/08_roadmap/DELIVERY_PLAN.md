@@ -90,6 +90,12 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 | **BACKLOG** ||||
 | **B1** | BPCP consolidation (D3) | bpcp · goalkeeper · catalog | — | ◷ |
 
+### Найдено при подготовке EP-005 — влияет на другие срезы
+
+**`auth-microservice` не эмитит никаких событий.** Ни RabbitMQ, ни amqp во всём `src/`. Регистрация пользователя порождает только строку в логе.
+
+Это не только проблема S5. Любой срез, которому нужно знать о событиях пользователей — S6 (квалификация), S10 (загрузка конверсий), MS-P (каналы связи) — упрётся в то же самое. Первое подключение событий к auth стоит спроектировать как переиспользуемое, а не под нужды одного среза.
+
 ### Why S2–S4 are a parallel track, not a gate
 
 The qualified-lead definition (§4.4.1 of the architecture) requires a reply on WhatsApp/Telegram/email. **Manual qualification does not require automated linkage** — the owner sees the reply on his phone and marks the lead. So S2–S4 do not block the first experiment.

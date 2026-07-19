@@ -3,7 +3,20 @@
 **Status:** closed — resolved 2026-07-18 in `bazos@6e19f10` · **Priority:** low — not blocking any milestone
 **Repo:** `bazos/` · **Raised by:** D-001 verification, 2026-07-18
 
-## Problem
+## ✅ Resolved
+
+Verified 2026-07-19:
+
+```
+bazos/services/bazos-service/     ← renamed
+grep -ril "aukro" src/            ← no matches
+```
+
+The directory, module paths and source references are all clean. Closed without action on our side.
+
+---
+
+## Problem (historical)
 
 `bazos-service` was scaffolded from `aukro-service` and the names were never changed. The **business logic is genuinely Bazos** (verified: 27 references to `bazos.cz` paths, zero to `aukro.cz`), but the directory, module and build names still say aukro.
 

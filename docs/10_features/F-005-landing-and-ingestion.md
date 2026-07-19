@@ -23,8 +23,26 @@ A visitor clicks a Google ad, lands on an experiment page, registers — and tha
 |---|---|
 | `growth-web` | Experiment landing runtime — clone of `bazos.alfares.cz`, variant routing, click-ID + UTM capture, consent capture, event emission |
 | `growth-core` | Ingestion worker, touchpoint store, identity link, attribution read model |
-| `bazos-service` | Emit `RegistrationCompleted` on successful registration, carrying the signed `gsid` |
+| `auth-microservice` | ⚠️ **Emit a registration event** — see the finding below. Currently emits nothing |
+| `bazos-service` | Carry `gsid` through the redirect to Alfares Auth and back |
 | `leads-microservice` | Create a `Lead` record from a registration ([D-003 Q3](../07_decisions/D-003-session-propagation-retention-buffer.md)) |
+
+### ⚠️ Scope correction — verified in code 2026-07-19
+
+The contract assumed `bazos-service` owns registration. **It does not.**
+
+```
+bazos/services/bazos-service/src/ui/ui.assets.ts:297
+  "Registrovat v Alfares Auth"
+bazos/services/bazos-service/src/ui/ui.assets.ts:1764
+  new URL(action === 'register' ? '/register' : '/login', authBaseUrl)
+```
+
+`bazos-service` has no registration backend at all — it redirects to **`auth-microservice`** (`@Post('register')` in `auth/auth.controller.ts`). Its own controllers only consume JWTs via `JwtAuthGuard`.
+
+And `auth-microservice` **emits no events whatsoever** — no RabbitMQ, no amqp, no publisher. Registration currently produces a log line and nothing else.
+
+**Consequence:** the conversion signal has no producer today. This is the largest single piece of work in the slice, and it was invisible until the code was read.
 
 ### Required consumers
 
