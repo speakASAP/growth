@@ -1,7 +1,8 @@
 # F-001 — Decision record and execution governance
 
-**Slice:** S1 · **Milestone:** MS-002 (minimal part) / MS-004 (full) · **Gate:** ① DOC
-**Status:** draft · **Created:** 2026-07-19
+**Slice:** S1 · **Milestone:** MS-002 (minimal part) / MS-004 (full) · **Gate:** ① DOC — **complete**
+**Status:** S1a passed to ② CONTRACT · **Created:** 2026-07-19 · **Updated:** 2026-07-19
+**Contract:** [C-001](../23_documentation_contracts/C-001-decision-record.md) · **Decisions:** [D-004](../07_decisions/D-004-decision-artefact-shape-and-hash.md)
 
 ---
 
@@ -66,11 +67,29 @@ interface ExperimentStopDecision extends DecisionArtefactBase {
   stoppedAt:          string;          // when spend actually stops, not when the call was made
 }
 
+interface ExperimentBudgetChangeDecision extends DecisionArtefactBase {
+  decisionType:         "experiment.budget_change";
+  reason:               string;      // REQUIRED — why the cap is moving
+  supersedesArtefactId: string;      // the artefact that set the cap being replaced
+  previousBudgetCap:    { value: string; currency: string };
+  newBudgetCap:         { value: string; currency: string };
+  effectiveFrom:        string;
+}
+
 type DecisionArtefact =
   | ExperimentLaunchDecision
-  | ExperimentStopDecision;
-  // "budget.change" is deliberately absent — see open question 1
+  | ExperimentStopDecision
+  | ExperimentBudgetChangeDecision;
 ```
+
+> Field-level authority is [C-001](../23_documentation_contracts/C-001-decision-record.md) and its
+> JSON schema. The shapes here describe behaviour; where the two ever disagree, the contract wins.
+
+**A mid-run budget change is a decision, not an adjustment** (D-004). The first experiment's budget
+is set by hand, so raising it is a two-minute act in the Google Ads UI — and if the system does not
+record it, the audit trail is missing precisely the moment money moved. `supersedesArtefactId`
+chains each change to the artefact whose cap it replaces, so the effective cap at any time is
+reconstructable rather than asserted.
 
 **A stop without a `reason` is rejected, not defaulted.** The dataset that matters in six months is not why experiments were launched — every launch is optimistic and the reasons rhyme — but why they were killed. That signal only exists if it is captured at the moment of the kill, when the owner still remembers. An empty-string `reason` is a validation failure, not an empty field.
 
@@ -115,16 +134,23 @@ An `ambiguous` outcome is **never retried blind**.
 
 ---
 
-## Open questions — resolve before CONTRACT
+## Open questions
 
-1. **Does `DecisionArtefact` cover budget changes at MS-002?** The first experiment has a fixed manual budget. If the owner raises it mid-run, is that a new artefact or an untracked manual act? Untracked means the audit trail has a hole exactly where money moved.
-2. **Where does `rationale` come from?** Free text typed by the owner, or structured fields? Free text is honest and cheap; structure is queryable later. Cannot be retrofitted onto artefacts already written.
-3. **Canonicalisation rules for the hash** — key ordering, whitespace, number formatting. Must be pinned in the contract, or two implementations produce different hashes for the same artefact.
-4. **Is `reason` free text or a category plus free text?** Resolved for MS-002 as free text, matching question 2. A category enum (`no_signal`, `cost_per_lead_too_high`, `budget_exhausted`, `hypothesis_disproved`, `external`) would make the kill dataset queryable, but the categories are guesses until roughly ten experiments have actually died. Deciding now would fix the wrong taxonomy in immutable records. Revisit at MS-004 — a category can be added as an optional field later, whereas making it required retroactively is impossible.
+**None. All four are resolved** — the DOC gate is closed and S1a has passed to ② CONTRACT.
 
 ### Resolved
 
 - **Does stopping an experiment need an artefact?** — **Yes.** `experiment.stop` with a required `reason`, modelled above. A kill is as consequential as a launch, and the record of why experiments died is the more useful dataset of the two.
+- **Does `DecisionArtefact` cover budget changes at MS-002?** — **Yes**, as `experiment.budget_change` ([D-004 §1](../07_decisions/D-004-decision-artefact-shape-and-hash.md)). Stop-and-relaunch was rejected: making a routine adjustment expensive guarantees it happens in the Ads UI and never reaches the record.
+- **Where does `rationale` come from?** — **Free text** ([D-004 §2](../07_decisions/D-004-decision-artefact-shape-and-hash.md)), consistent with `reason`. Optional structure can be added at MS-004; a required field can never be added retroactively.
+- **Canonicalisation rules for the hash** — **RFC 8785 (JCS)** ([D-004 §3](../07_decisions/D-004-decision-artefact-shape-and-hash.md)), pinned with its edge cases in [C-001 §3](../23_documentation_contracts/C-001-decision-record.md). An external standard is checkable against its own test vectors; prose rules are what two cold-starting agents diverge on.
+- **Is `reason` free text or a category plus free text?** — **Free text** for MS-002. A category enum (`no_signal`, `cost_per_lead_too_high`, `budget_exhausted`, `hypothesis_disproved`, `external`) would make the kill dataset queryable, but the categories are guesses until roughly ten experiments have actually died, and a wrong taxonomy in immutable records cannot be corrected. Revisit at MS-004.
+
+### Deferred to MS-004
+
+Recorded so the revisit is not lost: optional category fields alongside the free text on `reason`,
+and structured fields alongside `rationale`. Both are additive to artefacts already written; neither
+is expressible retroactively as required.
 
 ---
 
@@ -142,6 +168,13 @@ An `ambiguous` outcome is **never retried blind**.
 | Stop requires reason | A `experiment.stop` artefact with a missing, empty or whitespace-only `reason` is rejected |
 | Stop shape | A `experiment.stop` artefact carrying `plannedAction` or `hypothesis` is rejected |
 | Stop references a launch | A `experiment.stop` artefact whose `experimentId` + `experimentVersion` has no prior `experiment.launch` artefact is rejected |
+| Budget chain | A `budget_change` whose `previousBudgetCap` disagrees with the artefact it supersedes is rejected |
+| Budget fork | Two changes superseding the same artefact — the second is rejected, so cap history cannot branch |
+| Currency consistency | A `budget_change` in a different currency from the launch is rejected |
+
+The executable list, including the JCS test vectors and the concurrency cases, is
+[C-001 §8](../23_documentation_contracts/C-001-decision-record.md). The table above is the
+behavioural intent those tests exist to protect.
 
 ### Owner manual check
 
@@ -149,7 +182,8 @@ An `ambiguous` outcome is **never retried blind**.
 2. Attempt to edit it; confirm refusal
 3. Read it back three days later and confirm it explains *why* the experiment was launched without needing memory
 4. Stop the experiment without typing a reason; confirm refusal
-5. Stop it with a reason; confirm the launch and stop artefacts read back together as one story
+5. Raise the budget mid-run; confirm the change is recorded with your reason and that the effective cap is reconstructable from the chain
+6. Stop it with a reason; confirm the launch, budget change and stop artefacts read back together as one story
 
 ---
 
