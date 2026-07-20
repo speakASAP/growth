@@ -4,5 +4,9 @@
   "deployed": false,
   "slice": "S1a",
   "gate": "IMPL complete, VERIFY pending",
-  "notes": "Scaffold + decision-record implementation + 63 passing tests. Never deployed."
+  "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 planned at S5",
+  "containers": {
+    "growth-core": { "source": "services/core", "port": 3376, "deployed": false, "ingress": false }
+  },
+  "notes": "Decision-record implementation + 63 passing tests, verified after the 2026-07-20 fold of the separate growth-core repo into services/core. Never deployed; no git remote yet."
 }

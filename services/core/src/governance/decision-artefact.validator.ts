@@ -8,10 +8,11 @@ import schema from './schemas/decision-artefact.v1.json';
 /**
  * Shape validation for C-001 rules V1–V4, V9, V11(format), V12.
  *
- * The schema file is a byte-for-byte copy of the contract's published schema
- * (growth/docs/23_documentation_contracts/schemas/decision-artefact.v1.json), so the document
- * and the running service cannot drift apart. A schema retyped by hand would be a second
- * source of truth, which is how the two silently diverge.
+ * ./schemas/ is generated, not authored: scripts/sync-schema.js copies the contract's
+ * published schema (docs/23_documentation_contracts/schemas/decision-artefact.v1.json) there
+ * before every build and every test run, and the directory is gitignored. Edit the contract.
+ * A copy committed alongside the code would be a second source of truth, which is how a
+ * document and the service implementing it silently diverge.
  *
  * Cross-record rules (V5–V8) need the stored history and live in the service layer.
  */

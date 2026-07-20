@@ -73,7 +73,7 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 
 | # | Slice | Required owners | Milestone | Status |
 |---|---|---|---|---|
-| **S1a** | **Decision record** — `DecisionArtefact` + canonical hash | growth-core | M1 | 🔨 **CONTRACT готов, ждёт IMPL** — [F-001](../10_features/F-001-decision-record-and-governance.md) · [C-001](../23_documentation_contracts/C-001-decision-record.md) · [D-004](../07_decisions/D-004-decision-artefact-shape-and-hash.md) |
+| **S1a** | **Decision record** — `DecisionArtefact` + canonical hash | growth-core (`services/core/`) | M1 | 🔨 **IMPL готов (63 теста), ждёт VERIFY** — блокирован первым деплоем · [F-001](../10_features/F-001-decision-record-and-governance.md) · [C-001](../23_documentation_contracts/C-001-decision-record.md) · [D-004](../07_decisions/D-004-decision-artefact-shape-and-hash.md) |
 | **S1b** | Execution governance — `ApprovalGrant` + `approvedParametersHash`, `ExecutionAttempt` + `effectKey`, budget ceilings, fix in-memory idempotency | goalkeeper · growth-core | **M3** — не нужен до первой записи в API | ◷ |
 | **S5** | Landing runtime, durable edge→core ingestion, consent evidence, UTM + click-ID, `AnonymousTouchpoint`, `IdentityLink` | growth-web · growth-core · leads | M1 | ◷ |
 | **S6** | Qualification — `LeadQualificationEvent`, `criteriaVersion: v1-owner-manual`, manual marking surface, `ManualSpendObservation` | leads · growth-core | M1 | ◷ |

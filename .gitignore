@@ -42,6 +42,11 @@ venv/
 .venv
 venv
 
+# Generated from the contract by services/core/scripts/sync-schema.js.
+# The contract document owns the schema; a committed copy here would be a second
+# source of truth that diverges the first time only one of the two is edited.
+services/core/src/governance/schemas/
+
 # Coverage and temporary files
 coverage/
 .coverage

@@ -1,9 +1,26 @@
 # growth
 
-> **Status: documentation phase — no code yet, by design.**
+> **Status: first slice implemented, not deployed.**
 > Documentation → contracts → validation → coding, in that order.
 
 AI Growth Experimentation Platform: takes a human-authored business hypothesis and runs it end-to-end as a measurable paid-acquisition experiment. Human-in-the-loop by default; no autonomous money spend.
+
+## Layout — one repository, several containers
+
+| Path | Container | Port | Exposure | State |
+|---|---|---|---|---|
+| `docs/` | — | — | — | the authority for behaviour |
+| `services/core/` | `growth-core` | 3376 | ClusterIP only, no ingress | S1a code complete, not deployed |
+| `services/web/` | `growth-web` | 3377 | public, `growth.alfares.cz` | S5, not written yet |
+
+The contracts and the code implementing them share a repository deliberately. `C-001` publishes the
+decision-artefact JSON schema, and `services/core` validates against **that** file — generated into
+the source tree at build time and gitignored, so the document and the service cannot drift apart.
+Two repositories would have made that a convention held up by review; one repository makes it a
+build step.
+
+Deployables are still separate containers with separate exposure. Sharing a repository does not put
+`growth-core` on the internet — only a path in an ingress does that, and it has none.
 
 ## Document structure (IPS standard)
 
@@ -41,12 +58,12 @@ Follows the canonical Intent Preservation System layout used across the ecosyste
 
 | | |
 |---|---|
-| Stage | Documentation |
+| Stage | Implementation started |
 | Active milestone | **MS-001 — Access and baseline** |
 | Blocked on | First business selection · ad-platform decision · Google/Meta account registration |
-| Code | None — deliberate |
+| Code | `services/core` — S1a decision record, 63 tests passing, never deployed |
 | Market | Czechia only (stage 1), multiple businesses |
-| Port | 4900 (reserved, not yet allocated) |
+| Ports | 3376 `growth-core` · 3377 reserved for `growth-web` |
 
 ## Known blocking finding
 

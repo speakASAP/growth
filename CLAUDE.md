@@ -1,31 +1,50 @@
-# CLAUDE.md — growth-core
+# CLAUDE.md — growth
 
 Shared rules: `/home/ssf/.claude/CLAUDE.md` · `/home/ssf/Documents/Github/CLAUDE.md` ·
 `/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md`
 
-**Planning and contracts live in the `growth` repo, not here.** Read those before changing behaviour:
+AI Growth experimentation platform. **One repository, several containers.** The contracts and
+the code implementing them live together; splitting them across repositories is what lets a
+document and its implementation drift apart unnoticed.
+
+```
+docs/            plan, decisions, contracts, validation — the authority for behaviour
+services/core/   growth-core  :3376  ClusterIP only     (S1a — code complete, not deployed)
+services/web/    growth-web   :3377  public via ingress (S5 — not written yet)
+k8s/             manifests for every container
+deploy.config.sh one deploy for the platform
+```
+
+## Read before changing behaviour
 
 | Document | What it governs |
 |---|---|
-| `growth/docs/08_roadmap/DELIVERY_PLAN.md` | Slice order, milestones, gates |
-| `growth/docs/23_documentation_contracts/C-001-decision-record.md` | The decision-record contract this service implements |
-| `growth/docs/10_features/F-001-decision-record-and-governance.md` | Behaviour and validation intent |
-| `growth/docs/07_decisions/D-004-decision-artefact-shape-and-hash.md` | Why the artefact has the shape it has |
+| `docs/08_roadmap/DELIVERY_PLAN.md` | Slice order, milestones, gates |
+| `docs/23_documentation_contracts/C-001-decision-record.md` | The decision-record contract `services/core` implements |
+| `docs/10_features/F-001-decision-record-and-governance.md` | Behaviour and validation intent |
+| `docs/07_decisions/D-004-decision-artefact-shape-and-hash.md` | Why the artefact has the shape it has |
 
-## Stack
+Documentation → contracts → validation → code, in that order. Gates per slice:
+SPIKE → DOC → CONTRACT → IMPL → VERIFY.
+
+## services/core — stack
 
 NestJS 10, TypeScript (strict), PostgreSQL via `pg` with plain SQL migrations.
 
 No ORM by choice: the contract requires an immutability trigger and two partial unique indexes,
 which are written by hand under any ORM, and a mapping layer buys little for one append-only table.
 
-## Port
+## Exposure
 
-3376 — **ClusterIP only, no ingress**. `POST /governance/decisions` writes the record of why money
-was spent and S1a ships no authentication; absence of a public route is the access control until
-S1b adds an authenticated surface. Reserved: 3377 for `growth-web` (slice S5).
+`growth-core` is **ClusterIP only, no ingress**. `POST /governance/decisions` writes the record of
+why money was spent and S1a ships no authentication; absence of a public route is the access
+control until S1b adds an authenticated surface.
 
-## Endpoints
+When S5 adds `growth-web`, the ingress arrives with it and routes `growth.alfares.cz/` to the web
+container only. Sharing a repository does not put a container on the internet — only a path in an
+ingress does that. See `auth-microservice/k8s/ingress.yaml` for the path-routing pattern.
+
+## Endpoints (growth-core)
 
 ```
 POST /governance/decisions          201 created · 200 duplicate · 409 conflict · 422 invalid
@@ -36,12 +55,16 @@ GET  /health
 ## Commands
 
 ```bash
-npm run build
+cd services/core
+npm run build            # prebuild regenerates the schema from the contract
 npm test                 # 63 tests; db-specs need the test database below
 ./scripts/test-db.sh up  # throwaway Postgres on 55432 + migrations
 ./scripts/test-db.sh down
 npm run migrate          # apply migrations against DATABASE_URL / DB_* env
-./scripts/deploy.sh      # shim into shared/scripts/deploy.sh
+
+# from the repo root
+./scripts/deploy.sh                             # builds every container
+../shared/scripts/deploy.sh growth --dry-run    # prove config changes first
 ```
 
 ## Invariants that must not be softened
@@ -50,8 +73,9 @@ npm run migrate          # apply migrations against DATABASE_URL / DB_* env
   artefact. Do not add an update path.
 - **The canonical hash is RFC 8785 (JCS)** over the artefact with `canonicalHash` removed. Do not
   hand-roll canonicalisation; do not blank the key instead of deleting it.
-- **The JSON schema in `src/governance/schemas/` is a copy of the contract's published schema.**
-  If it changes here without changing there, the document and the service have diverged.
+- **`services/core/src/governance/schemas/` is generated and gitignored.** `scripts/sync-schema.js`
+  copies it from `docs/23_documentation_contracts/schemas/` before every build and test run. Edit
+  the contract, never the copy — that is what makes drift impossible rather than merely unlikely.
 - **Money is a decimal string**, never a number.
 - **Blank free-text fields are rejected, not defaulted** — a defaulted `reason` looks complete and
   carries nothing.

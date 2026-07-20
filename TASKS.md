@@ -1,21 +1,37 @@
-# TASKS.md — growth-core
+# TASKS.md — growth
 
-Backlog. Slice-level planning lives in `growth/docs/08_roadmap/DELIVERY_PLAN.md`.
+Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
 
 ## Open
 
 - [ ] **S1a VERIFY** — owner manual check from F-001: launch an experiment, attempt an edit,
       raise the budget mid-run, stop without a reason, stop with one, read the story back.
+      Blocked on the first deploy.
 - [ ] **First deploy** — not yet done. Requires `secret/prod/growth-core` DB_PASSWORD in Vault
       and the `growth_core` database to exist on the shared PostgreSQL.
+- [ ] **Create the GitHub remote.** The repository has no `origin`; the deploy pipeline is
+      commit → push → deploy.sh, so a push target has to exist before the first deploy.
 
-- [ ] **Pin the init-container image to the build tag.** `deploy.config.sh` sets the image on the
-      `app` container only, so the `migrate` init container keeps `:latest`. Both tags come from
-      the same build, so a normal deploy is consistent — but a rollback to an older build tag would
-      run new migrations against old application code. Needs a `deploy_post_manifests` hook.
+- [ ] **Pin the migrate init container to the build tag.** The shared runner's `kubectl set image`
+      targets the `app` container only, so the `migrate` init container keeps `:latest`. Both tags
+      come from the same build, so a normal deploy is consistent — but a rollback to an older build
+      tag would run new migrations against old application code. Needs a `deploy_post_manifests`
+      hook in `deploy.config.sh` (stub is already there, commented).
 
 ## Later
 
 - [ ] **S1b** — ApprovalGrant, approvedParametersHash, ExecutionAttempt/effectKey, budget ceilings.
       Blocks S9 (connector writes). Adds the first authenticated surface; revisit the
       no-ingress decision then.
+- [ ] **S5 — `services/web/`** brings the first public surface. The ingress arrives with it and
+      must route `growth.alfares.cz/` to `growth-web` only; `growth-core` stays off the public
+      routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
+
+## Done
+
+- [x] **2026-07-20 — folded `growth-core` back into this repository** as `services/core/`, one repo
+      with several containers (auth-microservice pattern). The split had put the C-001 contract and
+      the code enforcing it in different repositories, with nothing but a one-off `diff` keeping the
+      JSON schema in step. The schema is now generated from the contract at build time and
+      gitignored, so the two cannot diverge. The separate `growth-core` repo had no commits, which
+      is why the move cost nothing.

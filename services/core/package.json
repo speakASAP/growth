@@ -4,6 +4,8 @@
   "description": "Growth platform core — decision records, experiment governance, attribution",
   "main": "dist/main.js",
   "scripts": {
+    "sync:schema": "node scripts/sync-schema.js",
+    "prebuild": "npm run sync:schema",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -11,8 +13,11 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "migrate": "node scripts/migrate.js",
+    "pretest": "npm run sync:schema",
     "test": "jest",
+    "pretest:unit": "npm run sync:schema",
     "test:unit": "jest --testPathPattern='\\.spec\\.ts$'",
+    "pretest:db": "npm run sync:schema",
     "test:db": "jest --testPathPattern='\\.db-spec\\.ts$' --runInBand",
     "test:cov": "jest --coverage"
   },
@@ -45,7 +50,11 @@
     "typescript": "^5.3.3"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": ".",
     "testRegex": ".*\\.(spec|db-spec)\\.ts$",
     "transform": {
