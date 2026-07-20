@@ -4,6 +4,20 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
 
 ## Open
 
+- [ ] **SECURITY — the application role can drop its own immutability trigger.** Verified on the
+      live database 2026-07-20: `growth_core` owns `governance.decision_artefact`, and a table
+      owner may `ALTER TABLE ... DISABLE TRIGGER` or `DROP TRIGGER` regardless of the trigger's
+      own logic. Anyone holding the runtime credential can therefore switch off append-only,
+      rewrite history, and switch it back on. The trigger stops accidents, not an attacker with
+      the app's password — which is precisely the threat the decision record exists to survive.
+      Moving from `dbadmin` to a dedicated role reduced the blast radius but did not close this.
+
+      Fix: split the role in two. `growth_core_owner` owns the schema and is used **only** by the
+      migrate init container; `growth_core` is the runtime role and gets `INSERT, SELECT` on the
+      table and nothing else — no ownership, so no DDL. Needs a second Vault key, a second
+      `secretKey` in the ExternalSecret, and the init container pointed at the owner credential
+      while the app container keeps the runtime one.
+
 - [ ] **S1a VERIFY** — owner manual check from F-001: launch an experiment, attempt an edit,
       raise the budget mid-run, stop without a reason, stop with one, read the story back.
       Blocked on the first deploy.
