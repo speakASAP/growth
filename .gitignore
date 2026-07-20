@@ -55,3 +55,11 @@ temp/
 *.bak*
 *backup*
 *bck*
+
+k8s/secret.yaml
+secret.yaml
+secrets/
+keys/
+*.pem
+*.key
+*private*
