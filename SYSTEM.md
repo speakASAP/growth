@@ -17,10 +17,18 @@ NestJS 10 · TypeScript (strict) · PostgreSQL (`pg`, plain SQL migrations) · N
 
 ## Storage
 
-Database `growth_core` on the shared PostgreSQL (192.168.88.53:5432).
+Database `growth_core` on the shared PostgreSQL (`db-server-postgres:5432`, in-cluster).
 Schema `governance`, table `decision_artefact` — append-only, enforced by trigger.
 Migrations run as a K8s init container, so a pod cannot serve writes against a schema
 that lacks the immutability trigger.
+
+**Connects as the dedicated role `growth_core`, not the shared `dbadmin` superuser** — a
+deliberate deviation from the ecosystem convention. The append-only guarantee is a trigger, and
+a superuser can `ALTER TABLE ... DISABLE TRIGGER`; a service that can switch off its own audit
+guarantee does not really have one. The role is `NOSUPERUSER NOCREATEDB NOCREATEROLE` and owns
+only the `growth_core` database. It can still *connect* to other databases (PostgreSQL grants
+`CONNECT` to `PUBLIC` by default) but has read access to zero tables in any of them — verified
+across all 39 on 2026-07-20.
 
 ## Contract coupling
 
