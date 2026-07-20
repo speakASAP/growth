@@ -1,8 +1,8 @@
 # C-005 — Contract: landing and durable ingestion
 
 **Slice:** S5 · **Gate:** ② CONTRACT · **Feature:** [F-005](../10_features/F-005-landing-and-ingestion.md)
-**Decisions:** [D-002](../07_decisions/D-002-landing-conversion-and-buffer.md) · [D-003](../07_decisions/D-003-session-propagation-retention-buffer.md)
-**Status:** ready for IMPL · **Date:** 2026-07-19
+**Decisions:** [D-002](../07_decisions/D-002-landing-conversion-and-buffer.md) · [D-003](../07_decisions/D-003-session-propagation-retention-buffer.md) · [D-005](../07_decisions/D-005-gsid-propagation-correction.md)
+**Status:** ready for IMPL · **Date:** 2026-07-19 · **Revised:** 2026-07-20 (D-005: `gsid` carrier and producer corrected)
 
 Machine-readable schemas: [`schemas/`](schemas/)
 
@@ -18,7 +18,7 @@ interface GrowthEventEnvelope<TPayload extends object> {
   eventType:      string;   // e.g. "growth.touchpoint.observed.v1"
   eventVersion:   number;   // 1
   occurredAt:     string;   // ISO 8601, when the fact happened (not when received)
-  producer:       string;   // "growth-web" | "bazos-service" | "growth-core"
+  producer:       string;   // "growth-web" | "bazos-service" | "auth-microservice" | "leads-microservice" | "growth-core"
   workspaceId:    string;   // aggregate-root scope — never `tenantId`
   correlationId:  string;   // ties one user journey together
   causationId?:   string;   // OPTIONAL — root events have none
@@ -64,24 +64,52 @@ interface TouchpointObservedPayload {
 
 **No contact details at this stage.** The visitor is anonymous; `sessionId` is the only handle.
 
-### 2.2 `growth.registration.completed.v1`
+### 2.2 Registration — two events joined on `correlationId`
 
-Producer `bazos-service` · consumers `growth-core`, `leads-microservice` · `dataClass: "personal"`
+> Restructured by [D-005](../07_decisions/D-005-gsid-propagation-correction.md) §3. `bazos-service`
+> has no registration backend — it redirects to the hosted flow on `auth.alfares.cz`
+> (`ui.assets.ts:1764`); the endpoint is `auth-microservice/src/auth/auth.controller.ts`.
+> `auth-microservice` is shared ecosystem infrastructure, so its event stays **generic** and
+> `gsid` never reaches it ([EP-005](../21_execution_plans/EP-005-landing-and-ingestion.md) W3).
+
+#### 2.2a `growth.auth_redirect.initiated.v1`
+
+Producer `bazos-service` · consumer `growth-core` · `dataClass: "anonymous"`
 
 ```ts
-interface RegistrationCompletedPayload {
-  registrationId: string;
-  gsid?:          string;   // signed session token, raw as received; absent when consent was refused
+interface AuthRedirectInitiatedPayload {
+  gsid?:          string;   // signed session token, raw; absent when consent was refused
   gsidSource?:    "cookie" | "query";
-  email:          string;
-  phone?:         string;   // E.164
-  registeredAt:   string;
+  correlationId:  string;   // opaque handle; echoed back by auth via `state`
+  initiatedAt:    string;
 }
 ```
 
-`gsid` is passed **raw and unverified** — `bazos-service` does not hold the signing secret. Verification is `growth-core`'s job (§4).
+Emitted **at the moment of the click, before navigation** — not on the return callback. A visitor
+who registers and then closes the tab has still produced this half of the join.
 
-**`gsid` absent is a valid, expected case**, not an error: consent refused, cookie cleared, or a direct visit. The registration is still emitted.
+#### 2.2b `auth.user.registered.v1`
+
+Producer `auth-microservice` · consumers `growth-core`, `leads-microservice` · `dataClass: "personal"`
+
+```ts
+interface UserRegisteredPayload {
+  userId:              string;
+  correlationId?:      string;   // opaque, round-tripped through `state`; absent on direct signups
+  applicationContext?: string;   // which application the registration came from
+  registeredAt:        string;
+}
+```
+
+**Deliberately generic.** No `gsid`, no `experimentId`, no growth concept — this event is meant to
+be reused by S6, S10 and MS-P, per the delivery plan. `auth-microservice` treats `correlationId`
+as an opaque string: it neither interprets nor persists it beyond the emitted event.
+
+`growth-core` joins 2.2a to 2.2b on `correlationId`, verifies the `gsid` signature (§4), and creates
+the `IdentityLink`. The two halves may arrive **in either order**, and 2.2a may never get its
+partner (visitor abandoned registration) — both are normal, not errors.
+
+**`gsid` absent is a valid, expected case**, not an error: consent refused, cookie cleared, or a direct visit. Registration still completes and is still counted in aggregate.
 
 ### 2.3 `growth.lead.created_from_registration.v1`
 
@@ -152,7 +180,13 @@ Browser retries reuse the same `eventId` — that is what makes `200` on duplica
 gsid       = base64url(sessionId) + "." + base64url(HMAC-SHA256(sessionId, secret))
 secret     = Vault  secret/prod/growth  →  GROWTH_GSID_HMAC_SECRET   (32 bytes, random)
 cookie     = Domain=bazos.alfares.cz · Path=/ · Secure · SameSite=Lax · Max-Age=7776000  (90d)
+transport  = query parameter `?gsid=<signed>` on the redirect to https://auth.alfares.cz/register
 ```
+
+**The cookie is a store, not the transport.** It carries `gsid` across navigation *within*
+`bazos.alfares.cz` so the value survives until the visitor clicks through to registration.
+It is never sent to `auth.alfares.cz` — a sibling host, not a subdomain — which is why the
+query parameter is the carrier across the hop ([D-005](../07_decisions/D-005-gsid-propagation-correction.md)).
 
 **Verification** in `growth-core`, constant-time comparison:
 
@@ -244,7 +278,11 @@ Per delivery-plan §8 — schemas in a shared package, verified on both sides. A
 
 | Test | Side | Asserts |
 |---|---|---|
-| Producer conformance | `growth-web`, `bazos-service`, `leads-microservice` | every emitted event validates against its schema |
+| Producer conformance | `growth-web`, `bazos-service`, `auth-microservice`, `leads-microservice` | every emitted event validates against its schema |
+| Cross-host join | end-to-end | `gsid` captured on `bazos.alfares.cz` and `correlationId` round-tripped through `auth.alfares.cz` join to one `IdentityLink` |
+| Join arrival order | `growth-core` | 2.2a-then-2.2b and 2.2b-then-2.2a both produce the same `IdentityLink` |
+| Half-open join | `growth-core` | 2.2a with no matching 2.2b never links and never errors; no orphan counter incremented |
+| Auth event genericity | `auth-microservice` | emitted payload contains no `gsid`, `experimentId`, or other growth field — guards EP-005 W3 |
 | Consumer tolerance | `growth-core` | parser accepts everything the schema permits, including optional fields absent |
 | Idempotency | `growth-core` | same `eventId` twice → one row, second returns `200` |
 | Ack ordering | ingestion endpoint | `202` never precedes commit (failure injection between write and response) |

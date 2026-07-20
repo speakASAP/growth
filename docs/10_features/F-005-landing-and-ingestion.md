@@ -1,7 +1,8 @@
 # F-005 — Experiment landing and durable ingestion
 
 **Slice:** S5 · **Milestone:** MS-002 · **Gate:** ① DOC *(this document)*
-**Status:** draft — contract not yet written · **Created:** 2026-07-19
+**Status:** contract written ([C-005](../23_documentation_contracts/C-005-landing-and-ingestion.md)), ready for IMPL
+**Created:** 2026-07-19 · **Revised:** 2026-07-20 ([D-005](../07_decisions/D-005-gsid-propagation-correction.md))
 
 > Gates: `SPIKE → **DOC** → CONTRACT → IMPL → VERIFY`. Nothing is implemented until the contract document exists.
 
@@ -24,7 +25,7 @@ A visitor clicks a Google ad, lands on an experiment page, registers — and tha
 | `growth-web` | Experiment landing runtime — clone of `bazos.alfares.cz`, variant routing, click-ID + UTM capture, consent capture, event emission |
 | `growth-core` | Ingestion worker, touchpoint store, identity link, attribution read model |
 | `auth-microservice` | ⚠️ **Emit a registration event** — see the finding below. Currently emits nothing |
-| `bazos-service` | Carry `gsid` through the redirect to Alfares Auth and back |
+| `bazos-service` | Append the signed `gsid` as a query parameter to the Alfares Auth redirect (`ui.assets.ts:1764`) — the cookie cannot cross to `auth.alfares.cz` ([D-005](../07_decisions/D-005-gsid-propagation-correction.md)) |
 | `leads-microservice` | Create a `Lead` record from a registration ([D-003 Q3](../07_decisions/D-003-session-propagation-retention-buffer.md)) |
 
 ### ⚠️ Scope correction — verified in code 2026-07-19
@@ -84,14 +85,20 @@ A `sessionId` is issued and carried forward. **No contact details are stored at 
 
 ### 3. Session propagation and registration
 
-Landing and registration are **same-origin** (both on `bazos.alfares.cz`), which makes a first-party cookie the reliable carrier. Full rationale in [D-003 Q2](../07_decisions/D-003-session-propagation-retention-buffer.md).
+Landing and registration are **not** same-origin: the landing is on `bazos.alfares.cz`, registration
+is a hosted flow on `auth.alfares.cz`. A cookie scoped to the landing host never reaches the sibling
+host, so the **signed query parameter is the carrier** and the cookie only stores `gsid` across
+navigation within the landing. Corrected in
+[D-005](../07_decisions/D-005-gsid-propagation-correction.md), which supersedes
+[D-003 Q2](../07_decisions/D-003-session-propagation-retention-buffer.md).
 
 ```
 consent granted
   → growth-web sets  gsid = <sessionId>.<HMAC-SHA256(sessionId, secret)>
                      Domain=bazos.alfares.cz · Secure · SameSite=Lax · Max-Age=90d
-  → registration CTA also carries ?gsid=<signed>   (fallback)
-  → bazos-service reads cookie first, query second
+                     (store — survives navigation inside bazos.alfares.cz)
+  → bazos-service appends ?gsid=<signed> to the auth redirect   (transport, primary)
+  → auth-microservice reads gsid from the query
   → emits RegistrationCompleted with the raw signed value
   → growth-core verifies HMAC, then creates IdentityLink
   → invalid signature: registration recorded, attribution dropped
@@ -105,7 +112,7 @@ AnonymousTouchpoint(sessionId) ──IdentityLink──► registration ──�
 
 The `IdentityLink` is **erasable** — deleting it severs identity from the touchpoint without destroying the operational record (architecture §7.9).
 
-**⚠️ No consent → no cookie → no attribution.** The registration still completes and is counted in aggregate, but cannot be traced to an ad. Measured conversions will therefore be *lower* than actual. This is correct behaviour, not a defect — but cost-per-registration must be read with it in mind, and the MS-002 report must state the attributed/unattributed split.
+**⚠️ No consent → no `sessionId` → no `gsid` → no attribution.** The registration still completes and is counted in aggregate, but cannot be traced to an ad. Measured conversions will therefore be *lower* than actual. This is correct behaviour, not a defect — but cost-per-registration must be read with it in mind, and the MS-002 report must state the attributed/unattributed split.
 
 ### 4. Durable ingestion
 
@@ -155,12 +162,12 @@ One attribution algorithm is implemented. The version fields are still required 
 
 ---
 
-## Open questions — ✅ all closed by [D-003](../07_decisions/D-003-session-propagation-retention-buffer.md)
+## Open questions — ✅ all closed by [D-003](../07_decisions/D-003-session-propagation-retention-buffer.md), Q1–Q2 revised by [D-005](../07_decisions/D-005-gsid-propagation-correction.md)
 
 | # | Question | Resolution |
 |---|---|---|
-| 1 | Landing location | `bazos.alfares.cz` — same origin as registration |
-| 2 | `sessionId` propagation | Signed first-party cookie, signed query fallback, HMAC verified |
+| 1 | Landing location | `bazos.alfares.cz`. ⚠️ **Not** same origin as registration — that is on `auth.alfares.cz` ([D-005](../07_decisions/D-005-gsid-propagation-correction.md)) |
+| 2 | `sessionId` propagation | Signed **query parameter** across the host hop; cookie stores it within the landing; HMAC verified in `growth-core` ([D-005](../07_decisions/D-005-gsid-propagation-correction.md) supersedes D-003 Q2) |
 | 3 | Registration → `Lead`? | **Yes** — `leads-microservice` joins the slice |
 | 4 | Touchpoint retention | **14 months**, then hard delete. Aggregates indefinite |
 | 5 | Buffer placement | `ingest` schema in the `growth` database |

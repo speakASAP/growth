@@ -1,15 +1,26 @@
 # D-003 — Session propagation, retention, buffer placement
 
-**Status:** accepted · **Date:** 2026-07-19 · **Closes:** F-005 open questions 1–5
+**Status:** accepted, **Q2 superseded** · **Date:** 2026-07-19 · **Closes:** F-005 open questions 1–5
 **Decided by:** owner (Q1, Q3) · Claude, delegated (Q2, Q4, Q5)
+
+> ⚠️ **Q2 is superseded by [D-005](D-005-gsid-propagation-correction.md) (2026-07-20).** Its premise —
+> that landing and registration are same-origin — is false: registration happens on
+> `auth.alfares.cz`, a sibling host, so the cookie never arrives. The signed query parameter is the
+> carrier. Q1's *location* holds; only the same-origin consequence drawn from it is wrong.
+> Q3–Q5 are unaffected.
 
 ---
 
 ## Q1 — Landing location: `bazos.alfares.cz` *(owner)*
 
-The experiment landing lives on `bazos.alfares.cz`, the same host as the registration flow at `/client?auth=register`.
+The experiment landing lives on `bazos.alfares.cz`. *(Location confirmed; still current.)*
 
-**Consequence that makes everything else simpler: landing and registration are same-origin.** A first-party cookie set on the landing is readable at registration without any cross-domain machinery.
+~~**Consequence that makes everything else simpler: landing and registration are same-origin.** A first-party cookie set on the landing is readable at registration without any cross-domain machinery.~~
+
+⚠️ **False.** Verified in code 2026-07-20: `bazos-service` has no registration backend and redirects
+to `https://auth.alfares.cz/register` (`ui.assets.ts:1665,1764`). `auth.alfares.cz` is a sibling of
+`bazos.alfares.cz`, not a subdomain, so a cookie scoped `Domain=bazos.alfares.cz` is never sent
+there. See [D-005](D-005-gsid-propagation-correction.md).
 
 ---
 
