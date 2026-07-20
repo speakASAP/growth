@@ -71,6 +71,14 @@ npm run migrate          # apply migrations against DATABASE_URL / DB_* env
 
 - **`decision_artefact` is append-only**, enforced by a Postgres trigger. Corrections create a new
   artefact. Do not add an update path.
+- **The application never owns its own schema.** `growth_core_owner` owns everything and is used
+  only by the migrate init container; `growth_core` is the runtime role and holds DML grants only.
+  A table owner can `DISABLE TRIGGER` whatever the trigger body says, so an application connected
+  as owner can switch off the append-only guarantee, rewrite history, and switch it back on.
+  Every migration creating a table must grant the runtime role explicitly — grants are written per
+  table rather than via `ALTER DEFAULT PRIVILEGES`, so a forgotten grant fails loudly instead of
+  silently handing UPDATE/DELETE to an append-only table. Guarded by
+  `src/db/role-privileges.db-spec.ts`.
 - **The canonical hash is RFC 8785 (JCS)** over the artefact with `canonicalHash` removed. Do not
   hand-roll canonicalisation; do not blank the key instead of deleting it.
 - **`services/core/src/governance/schemas/` is generated and gitignored.** `scripts/sync-schema.js`

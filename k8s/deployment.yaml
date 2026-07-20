@@ -35,6 +35,19 @@ spec:
                 name: growth-core-config
             - secretRef:
                 name: growth-core-secret
+          # This container, and only this container, connects as the schema owner. `env` overrides
+          # the DB_USER/DB_PASSWORD arriving via envFrom, so the app container below keeps the
+          # runtime credential, which owns nothing and therefore cannot issue DDL — it cannot drop
+          # the append-only trigger that makes the decision record trustworthy. See
+          # migrations/003_runtime_grants.sql.
+          env:
+            - name: DB_USER
+              value: "growth_core_owner"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: growth-core-secret
+                  key: DB_OWNER_PASSWORD
       containers:
         - name: app
           image: localhost:5000/growth-core:latest

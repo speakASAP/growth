@@ -18,8 +18,10 @@ data:
   NOTIFICATION_SERVICE_URL: "http://notifications-microservice.statex-apps.svc.cluster.local:3368"
   DB_HOST: "db-server-postgres"
   DB_PORT: "5432"
-  # Dedicated role, not the shared dbadmin superuser. decision_artefact's immutability is a
-  # trigger, and a superuser can ALTER TABLE ... DISABLE TRIGGER — a service able to disable
-  # its own audit guarantee does not have one. growth_core owns only its own database.
+  # The runtime credential, used by the app container. It owns nothing: decision_artefact's
+  # immutability is a trigger, and any table *owner* can ALTER TABLE ... DISABLE TRIGGER, so a
+  # service that owned its own tables could switch off its own audit guarantee. Ownership lives
+  # with growth_core_owner, which only the migrate init container uses. See
+  # services/core/migrations/003_runtime_grants.sql.
   DB_USER: "growth_core"
   DB_NAME: "growth_core"
