@@ -1,12 +1,18 @@
 {
-  "stage": "bootstrap",
-  "health": "unknown",
-  "deployed": false,
-  "slice": "S1a",
-  "gate": "IMPL complete, VERIFY pending",
+  "stage": "deployed",
+  "health": "ok",
+  "deployed": true,
+  "slice": "S5",
+  "gate": "S1a IMPL complete + deployed, owner VERIFY pending; S5 receiving side deployed, W6 broker binding outstanding",
   "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 planned at S5",
   "containers": {
-    "growth-core": { "source": "services/core", "port": 3376, "deployed": false, "ingress": false }
+    "growth-core": { "source": "services/core", "port": 3376, "deployed": true, "ingress": false }
   },
-  "notes": "Decision-record implementation + 63 passing tests, verified after the 2026-07-20 fold of the separate growth-core repo into services/core. Never deployed; no git remote yet."
+  "database": {
+    "name": "growth_core",
+    "owner_role": "growth_core_owner",
+    "runtime_role": "growth_core",
+    "note": "Roles split 2026-07-20. The runtime role holds DML grants only and owns nothing, so it cannot disable the decision_artefact append-only trigger. Migrations 001-003 applied in production."
+  },
+  "notes": "110 passing tests. Deployed and verified in production 2026-07-20: /health ok, POST /ingest/events returns 202 then 200 on replay, runtime role refused DISABLE TRIGGER and UPDATE. Buffered events do not leave the buffer yet - PublisherWorker is deliberately unregistered until the RabbitMQ binding (W6)."
 }

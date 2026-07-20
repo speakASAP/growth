@@ -4,25 +4,21 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
 
 ## Open
 
-- [ ] **SECURITY — the application role can drop its own immutability trigger.** Verified on the
-      live database 2026-07-20: `growth_core` owns `governance.decision_artefact`, and a table
-      owner may `ALTER TABLE ... DISABLE TRIGGER` or `DROP TRIGGER` regardless of the trigger's
-      own logic. Anyone holding the runtime credential can therefore switch off append-only,
-      rewrite history, and switch it back on. The trigger stops accidents, not an attacker with
-      the app's password — which is precisely the threat the decision record exists to survive.
-      Moving from `dbadmin` to a dedicated role reduced the blast radius but did not close this.
-
-      Fix: split the role in two. `growth_core_owner` owns the schema and is used **only** by the
-      migrate init container; `growth_core` is the runtime role and gets `INSERT, SELECT` on the
-      table and nothing else — no ownership, so no DDL. Needs a second Vault key, a second
-      `secretKey` in the ExternalSecret, and the init container pointed at the owner credential
-      while the app container keeps the runtime one.
-
 - [ ] **S1a VERIFY** — owner manual check from F-001: launch an experiment, attempt an edit,
       raise the budget mid-run, stop without a reason, stop with one, read the story back.
-      Blocked on the first deploy.
-- [ ] **First deploy** — not yet done. Prerequisites are now all in place (database, Vault
-      secret, remote); nothing external is blocking it.
+      **No longer blocked** — `growth-core` is deployed and healthy. This is the only thing
+      standing between S1a and done, and it needs the owner, not an agent.
+
+      `growth-core` is ClusterIP-only, so the checks run from inside the cluster:
+      `kubectl -n statex-apps exec deploy/growth-core -c app -- node -e "..."` against
+      `localhost:3376`, or a `kubectl port-forward svc/growth-core 3376:3376`.
+      Note `POST /ingest/events` takes a bare JSON **array** of envelopes (or one envelope
+      object), not a `{"events": [...]}` wrapper.
+
+- [ ] **W6 — bind `PublisherWorker` to RabbitMQ.** Events reach the buffer in production and stay
+      there: the worker is deliberately not registered in `IngestModule` because it needs an
+      `EventPublisher`. Nothing is lost, but nothing is published either, so S5 is not end-to-end
+      until this lands.
 
 - [ ] **Pin the migrate init container to the build tag.** The shared runner's `kubectl set image`
       targets the `app` container only, so the `migrate` init container keeps `:latest`. Both tags
@@ -40,6 +36,31 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-20 — first deploy, and the database role split that had to precede it.**
+      `growth-core` runs in `statex-apps`, ClusterIP only, `/health` ok, migrations 001–003
+      applied. `POST /ingest/events` verified against production: 202 on first delivery, 200 on
+      replay of the same `eventId`.
+
+      The security item above is closed. `growth_core_owner` owns the schema and is used only by
+      the migrate init container (`DB_OWNER_PASSWORD`, a second Vault key and ExternalSecret
+      entry); `growth_core` is the runtime role, holds DML grants only, and owns nothing. Verified
+      on the live database: it is refused `DISABLE TRIGGER` (*must be owner*) and `UPDATE`
+      (*permission denied*) on `decision_artefact`, while `SELECT`/`INSERT` and full DML on
+      `ingest.event_buffer` still work.
+
+      Grants are written per table in `003_runtime_grants.sql` rather than through
+      `ALTER DEFAULT PRIVILEGES`: a blanket `GRANT ALL` would quietly hand `UPDATE`/`DELETE` to
+      every future append-only table, whereas a forgotten grant fails loudly on first use.
+      **Every migration that creates a table must add its own grant.**
+
+      `src/db/role-privileges.db-spec.ts` asserts the boundary (110 tests, was 100). Falsified by
+      handing ownership back to `growth_core`: five specs turn red. Its destructive statements run
+      inside a rolled-back transaction — the first version of the spec `DROP TABLE`d the table it
+      was checking, in exactly the regression it exists to catch.
+
+      ⚠️ Changing a table's owner **drops** grants held by the incoming owner, and moving ownership
+      back does not restore them. Re-run the grants after any ownership change.
 
 - [x] **2026-07-20 — S5 IMPL, receiving side in `growth-core`.** `POST /ingest/events`
       (202 committed / 200 duplicate / 400 schema / 413 batch>50 / 503 buffer unwritable),
