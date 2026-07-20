@@ -249,6 +249,7 @@ CREATE INDEX event_buffer_published_idx
 
 ```
 SELECT … WHERE status IN ('pending','failed') AND attempts < 10
+              AND (next_attempt_at IS NULL OR next_attempt_at <= now())
 ORDER BY received_at
 FOR UPDATE SKIP LOCKED
 LIMIT 100
@@ -256,11 +257,42 @@ LIMIT 100
 
 `SKIP LOCKED` allows more than one worker without double publishing.
 
+> **Corrected 2026-07-20 (W6).** This query originally had no `next_attempt_at` clause, and the
+> implementation followed it faithfully: the backoff below was computed for a log line and never
+> enforced. A failed row was re-claimed on the very next drain, so a broker outage burned all ten
+> attempts in ten iterations and the event reached `dead` within seconds — the buffer losing events
+> during precisely the outage it exists to survive, while the log described an orderly exponential
+> retreat. `next_attempt_at` (migration `004`) is what makes the backoff real. A delay that is
+> reported but not enforced is worse than no delay, because it reads as correct in the logs.
+
 | Result | Transition |
 |---|---|
 | Published to RabbitMQ | `published`, `published_at = now()` |
-| Transient failure | `failed`, `attempts += 1`, backoff `min(2^attempts, 300)` s |
+| Transient failure | `failed`, `attempts += 1`, `next_attempt_at = now() + min(2^attempts, 300)` s |
 | `attempts` reaches 10 | `dead`, alert raised |
+
+### Publication target
+
+| | |
+|---|---|
+| Exchange | `growth.events` — **topic, durable** |
+| Routing key | the event type, e.g. `growth.auth_redirect.initiated.v1` |
+| Message | the buffered envelope verbatim, `persistent`, `contentType: application/json`, `messageId` = `eventId` |
+| Confirmation | a **confirm channel**; `publish` is not complete until `waitForConfirms()` resolves |
+
+The exchange follows the ecosystem convention of one durable topic exchange per producing service
+(`catalog.events`, `orders.events`, `bpcp.events`), so consumers bind the routing keys they want
+without growth-core knowing who is listening.
+
+**Confirms are not optional.** The drain marks a row `published` when `publish()` resolves and
+never examines it again, so that signal has to mean the broker durably holds the message. A plain
+channel's `publish()` returns as soon as the bytes are handed to the socket, which would retire
+events that a broker crash then loses — the same acknowledge-before-commit loss this slice exists
+to prevent, moved one step later where it is harder to see.
+
+⚠️ **A topic exchange silently discards a message with no matching binding.** A consumer must
+declare its queue and binding *before* the producer it depends on goes live, or the events will be
+marked published and be gone.
 
 **`dead` rows are never deleted automatically.** A row that cannot be published stays visible for inspection — silent loss here defeats the buffer's purpose.
 

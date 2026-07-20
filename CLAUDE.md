@@ -57,7 +57,7 @@ GET  /health
 ```bash
 cd services/core
 npm run build            # prebuild regenerates the schema from the contract
-npm test                 # 63 tests; db-specs need the test database below
+npm test                 # 149 tests; db-specs need the test database below
 ./scripts/test-db.sh up  # throwaway Postgres on 55432 + migrations
 ./scripts/test-db.sh down
 npm run migrate          # apply migrations against DATABASE_URL / DB_* env
@@ -92,8 +92,17 @@ npm run migrate          # apply migrations against DATABASE_URL / DB_* env
 
 ## Integrations
 
-None yet. S1a defines no event because nothing outside this service consumes decisions at MS-002;
-adding one before a consumer exists is the speculative integration the slice scope rule forbids.
+**RabbitMQ — `growth.events`** (topic, durable; routing key = event type). The ingest buffer
+drains onto it every 5s. Publishing uses a confirm channel: the drain retires a row on `publish()`
+resolving, so that must mean the broker durably has the message, never just that the bytes reached
+the socket.
+
+⚠️ A topic exchange discards a message with no matching binding. Nothing consumes `growth.events`
+yet — the first consumer must declare its queue and binding **before** the producer it depends on
+goes live, or events will be marked published and be gone.
+
+S1a defines no event: nothing outside this service consumes decisions at MS-002, and adding one
+before a consumer exists is the speculative integration the slice scope rule forbids.
 
 ## Health
 

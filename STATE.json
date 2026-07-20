@@ -3,7 +3,7 @@
   "health": "ok",
   "deployed": true,
   "slice": "S5",
-  "gate": "S1a IMPL complete + deployed, owner VERIFY pending; S5 receiving side deployed, W6 broker binding outstanding",
+  "gate": "S1a IMPL complete + deployed, owner VERIFY pending; S5 receiving side complete end to end (W1 + W6), producers W3/W4/W2/W5 outstanding",
   "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 planned at S5",
   "containers": {
     "growth-core": { "source": "services/core", "port": 3376, "deployed": true, "ingress": false }
@@ -14,5 +14,11 @@
     "runtime_role": "growth_core",
     "note": "Roles split 2026-07-20. The runtime role holds DML grants only and owns nothing, so it cannot disable the decision_artefact append-only trigger. Migrations 001-003 applied in production."
   },
-  "notes": "110 passing tests. Deployed and verified in production 2026-07-20: /health ok, POST /ingest/events returns 202 then 200 on replay, runtime role refused DISABLE TRIGGER and UPDATE. Buffered events do not leave the buffer yet - PublisherWorker is deliberately unregistered until the RabbitMQ binding (W6)."
+  "broker": {
+    "exchange": "growth.events",
+    "type": "topic, durable",
+    "routingKey": "the event type",
+    "note": "No consumer is bound yet. A topic exchange discards messages with no matching binding, so the first consumer must declare its queue and binding before the producer it depends on goes live."
+  },
+  "notes": "149 passing tests. Verified in production 2026-07-20: /health ok, POST /ingest/events returns 202 then 200 on replay, an event posted end to end arrived verbatim in a queue bound to growth.events and its buffer row reached status=published, and the runtime role was refused DISABLE TRIGGER and UPDATE. Drain runs every 5s; retention sweep at 03:00 Europe/Prague."
 }

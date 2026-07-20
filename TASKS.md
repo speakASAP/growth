@@ -15,10 +15,15 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       Note `POST /ingest/events` takes a bare JSON **array** of envelopes (or one envelope
       object), not a `{"events": [...]}` wrapper.
 
-- [ ] **W6 — bind `PublisherWorker` to RabbitMQ.** Events reach the buffer in production and stay
-      there: the worker is deliberately not registered in `IngestModule` because it needs an
-      `EventPublisher`. Nothing is lost, but nothing is published either, so S5 is not end-to-end
-      until this lands.
+- [ ] **S5 producers — W3, W4, W2, W5.** The receiving side is complete and live; nothing yet
+      emits into it. Next in EP-005 merge order is **W3** (`auth-microservice` emits a generic
+      `auth.user.registered.v1`), which is the largest task in the slice and touches shared
+      infrastructure — every application's login. Fullest regression evidence required.
+
+- [ ] **Consumers of `growth.events` are unbound.** The exchange is a durable topic exchange, so
+      a message with no matching binding is discarded silently. Nothing consumes growth events
+      yet, which is correct for now — but the first consumer must declare its queue and binding
+      before the producer it cares about goes live, or the events will look published and be gone.
 
 - [ ] **Pin the migrate init container to the build tag.** The shared runner's `kubectl set image`
       targets the `app` container only, so the `migrate` init container keeps `:latest`. Both tags
@@ -36,6 +41,43 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-20 — W6: the buffer drains to RabbitMQ.** `growth.events` (durable topic
+      exchange, routing key = event type, the `catalog.events`/`orders.events` convention).
+      Verified in production end to end: a queue bound to `growth.events`, an event posted to
+      `POST /ingest/events`, and the envelope arrived in the queue byte for byte with routing key
+      `growth.auth_redirect.initiated.v1`; both buffer rows reached `status=published`.
+
+      The publisher uses a **confirm channel** and awaits `waitForConfirms()`. The drain marks a
+      row published on `publish()` resolving and never looks at it again, so that signal must mean
+      the broker durably holds the message — a plain channel returns once the bytes reach the
+      socket, which would retire events a broker crash then loses.
+
+      Two adjacent gaps closed, both of which had been reporting themselves as healthy:
+
+      - **The retry backoff was never enforced.** `claimPending` had no time filter, so a failed
+        row was re-claimed on the next tick; with the broker actually down, ten attempts burned in
+        ten iterations and the event was `dead` within seconds — losing events during exactly the
+        outage the buffer exists to survive, while the log described an orderly exponential
+        retreat. Migration `004` adds `next_attempt_at`. `backoff-agreement.db-spec.ts` pins the
+        SQL delay to `backoffSeconds()` at every attempt count so the logged wait and the enforced
+        wait cannot drift.
+      - **`RetentionService.sweep()` had no caller**, so C-005 §6 existed only on paper and the
+        `dead`-row alert could never fire. `RetentionScheduler` runs it at 03:00 Europe/Prague,
+        resolved via `Intl` — a fixed offset would have been an hour off for half the year, and a
+        sweep at 02:00 looks exactly like one at 03:00.
+
+      Schedulers use plain timers, not `@nestjs/schedule`: the drain wants "every few seconds",
+      not a calendar expression, and `@Cron` depends on `reflect-metadata` emitting design-time
+      types, which this ecosystem has already been bitten by on Node 22+.
+
+      `ingest-module.db-spec.ts` builds the real Nest container, and earned itself immediately —
+      it caught `RabbitMqEventPublisher`'s test seam being treated as an injectable dependency,
+      which would otherwise have surfaced as a crash-looping pod after deploy.
+
+      ⚠️ **`npm test` was not equivalent to `npm run test:db`.** The db-specs share one database
+      and `TRUNCATE` between tests, but plain `jest` ran suites in parallel, so the two commands
+      could disagree about whether the code worked. Jest now runs with `maxWorkers: 1`.
 
 - [x] **2026-07-20 — first deploy, and the database role split that had to precede it.**
       `growth-core` runs in `statex-apps`, ClusterIP only, `/health` ok, migrations 001–003
