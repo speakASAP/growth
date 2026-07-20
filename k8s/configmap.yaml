@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: growth-core-config
+  namespace: statex-apps
+  labels:
+    app: growth-core
+    managed-by: k8s-migration
+data:
+  NODE_ENV: "production"
+  SERVICE_NAME: "growth-core"
+  # ClusterIP-only — no public ingress. See deploy.config.sh for why.
+  DOMAIN: "growth-core.statex-apps.svc.cluster.local"
+  PORT: "3376"
+  LOGGING_SERVICE_URL: "http://logging-microservice.statex-apps.svc.cluster.local:3367"
+  LOGGING_SERVICE_API_PATH: "/api/logs"
+  AUTH_SERVICE_URL: "http://auth-microservice.statex-apps.svc.cluster.local:3370"
+  NOTIFICATION_SERVICE_URL: "http://notifications-microservice.statex-apps.svc.cluster.local:3368"
+  DB_HOST: "192.168.88.53"
+  DB_PORT: "5432"
+  DB_USER: "dbadmin"
+  DB_NAME: "growth_core"

@@ -1,0 +1,8 @@
+{
+  "stage": "bootstrap",
+  "health": "unknown",
+  "deployed": false,
+  "slice": "S1a",
+  "gate": "IMPL complete, VERIFY pending",
+  "notes": "Scaffold + decision-record implementation + 63 passing tests. Never deployed."
+}
