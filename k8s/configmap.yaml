@@ -16,6 +16,12 @@ data:
   LOGGING_SERVICE_API_PATH: "/api/logs"
   AUTH_SERVICE_URL: "http://auth-microservice.statex-apps.svc.cluster.local:3370"
   NOTIFICATION_SERVICE_URL: "http://notifications-microservice.statex-apps.svc.cluster.local:3368"
+  # EP-005 W6 — the buffer drains onto this exchange. Ecosystem convention is one durable topic
+  # exchange per producing service (`catalog.events`, `orders.events`), routing key = event type,
+  # so consumers bind the keys they want without growth-core knowing who is listening.
+  RABBITMQ_URL: "amqp://guest:guest@rabbitmq.statex-apps.svc.cluster.local:5672"
+  GROWTH_EVENTS_EXCHANGE: "growth.events"
+  GROWTH_DRAIN_INTERVAL_MS: "5000"
   DB_HOST: "db-server-postgres"
   DB_PORT: "5432"
   # The runtime credential, used by the app container. It owns nothing: decision_artefact's

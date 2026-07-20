@@ -4,20 +4,32 @@ import { IngestController } from './ingest.controller';
 import { IngestService } from './ingest.service';
 import { IngestRepository } from './ingest.repository';
 import { RetentionService } from './retention.service';
+import { EVENT_PUBLISHER, PublisherWorker } from './publisher.worker';
+import { RabbitMqEventPublisher } from './rabbitmq.publisher';
+import { DrainScheduler } from './drain.scheduler';
+import { RetentionScheduler } from './retention.scheduler';
 
 /**
- * S5 receiving side: the endpoint, the buffer, and the retention sweep.
+ * S5: the endpoint, the buffer, the drain to RabbitMQ (W6), and the retention sweep.
  *
- * PublisherWorker is deliberately not provided yet — it needs an EventPublisher, and the broker
- * binding is W6. Registering it now would mean either a null publisher that silently drops
- * events or a worker that crashes the pod on boot; both are worse than the drain simply not
- * running until there is somewhere to drain to. The buffer keeps everything meanwhile, which is
- * what it is for.
+ * There is deliberately no "publishing enabled" flag. The failure it would guard against —
+ * a broker that is down — is already handled correctly: `publish()` rejects, the row stays
+ * unpublished, and the backoff retries it. A flag would add the one failure the buffer cannot
+ * survive, which is looking healthy while quietly going nowhere.
  */
 @Module({
   imports: [DatabaseModule],
   controllers: [IngestController],
-  providers: [IngestService, IngestRepository, RetentionService],
+  providers: [
+    IngestService,
+    IngestRepository,
+    RetentionService,
+    RabbitMqEventPublisher,
+    { provide: EVENT_PUBLISHER, useExisting: RabbitMqEventPublisher },
+    PublisherWorker,
+    DrainScheduler,
+    RetentionScheduler,
+  ],
   exports: [IngestRepository],
 })
 export class IngestModule {}

@@ -3,9 +3,10 @@ import { DatabaseService } from '../db/database.service';
 import { BufferedEvent, GrowthEventEnvelope, IngestOutcome } from './envelope.types';
 import { PG_UNIQUE_VIOLATION } from '../governance/decision.repository';
 
-/** C-005 §5 — worker drain size and give-up threshold. */
+/** C-005 §5 — worker drain size, give-up threshold, and the ceiling on the retry backoff. */
 export const DRAIN_BATCH_SIZE = 100;
 export const MAX_ATTEMPTS = 10;
+export const MAX_BACKOFF_SECONDS = 300;
 
 @Injectable()
 export class IngestRepository {
@@ -54,6 +55,7 @@ export class IngestRepository {
          FROM ingest.event_buffer
         WHERE status IN ('pending','failed')
           AND attempts < $1
+          AND (next_attempt_at IS NULL OR next_attempt_at <= now())
         ORDER BY received_at
           FOR UPDATE SKIP LOCKED
         LIMIT $2`,
@@ -75,15 +77,22 @@ export class IngestRepository {
    * Records a failed publish. The row goes to `dead` on the attempt that reaches MAX_ATTEMPTS
    * so it stops being claimed; `dead` rows are never deleted automatically (C-005 §5) — silent
    * loss here would defeat the buffer's entire purpose.
+   *
+   * `next_attempt_at` is what makes the backoff real rather than merely logged: until it passes,
+   * claimPending steps over the row. The delay is computed from the row's own `attempts` in SQL,
+   * in the same statement that increments it, so the value the backoff is based on cannot drift
+   * from the value that was stored.
    */
   async markFailed(client: QueryRunner, eventId: string, error: string): Promise<void> {
     await client.query(
       `UPDATE ingest.event_buffer
           SET attempts = attempts + 1,
               last_error = $2,
-              status = CASE WHEN attempts + 1 >= $3 THEN 'dead' ELSE 'failed' END
+              status = CASE WHEN attempts + 1 >= $3 THEN 'dead' ELSE 'failed' END,
+              next_attempt_at = now()
+                + LEAST(POWER(2, attempts + 1), $4) * interval '1 second'
         WHERE event_id = $1`,
-      [eventId, error.slice(0, 2000), MAX_ATTEMPTS],
+      [eventId, error.slice(0, 2000), MAX_ATTEMPTS, MAX_BACKOFF_SECONDS],
     );
   }
 

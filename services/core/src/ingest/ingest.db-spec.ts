@@ -133,6 +133,57 @@ describe('claimPending — FOR UPDATE SKIP LOCKED', () => {
     const claimed = await db.withTransaction((client) => repo.claimPending(client));
     expect(claimed).toEqual([]);
   });
+
+  // C-005 §5 gives failures a backoff of min(2^attempts, 300) seconds. Without a time filter here
+  // the drain re-claims a failed row immediately, so a broker outage burns all ten attempts in as
+  // many loop iterations and the event is `dead` within seconds — the buffer would lose events
+  // during precisely the outage it exists to survive.
+  it('does not re-claim a failed row while it is still inside its backoff window', async () => {
+    await repo.insert(envelope(14));
+    await db.withTransaction((client) => repo.markFailed(client, uuid(14), 'broker down'));
+
+    const claimed = await db.withTransaction((client) => repo.claimPending(client));
+    expect(claimed).toEqual([]);
+  });
+
+  it('claims a failed row again once its backoff has elapsed', async () => {
+    await repo.insert(envelope(15));
+    await db.withTransaction((client) => repo.markFailed(client, uuid(15), 'broker down'));
+    await db.query("UPDATE ingest.event_buffer SET next_attempt_at = now() - interval '1 second'");
+
+    const claimed = await db.withTransaction((client) => repo.claimPending(client));
+    expect(claimed.map((e) => e.eventId)).toEqual([uuid(15)]);
+  });
+
+  it('backs off further with each successive failure', async () => {
+    await repo.insert(envelope(16));
+
+    const waitAfter = async (attempts: number): Promise<number> => {
+      await db.query('UPDATE ingest.event_buffer SET attempts = $1', [attempts]);
+      await db.withTransaction((client) => repo.markFailed(client, uuid(16), 'broker down'));
+      const { rows } = await db.query<{ seconds: number }>(
+        'SELECT EXTRACT(EPOCH FROM (next_attempt_at - now()))::float AS seconds FROM ingest.event_buffer',
+      );
+      return rows[0].seconds;
+    };
+
+    // 2^1 and 2^4 — the row is put further out of reach the longer the broker stays down.
+    expect(await waitAfter(0)).toBeGreaterThan(1);
+    expect(await waitAfter(3)).toBeGreaterThan(await waitAfter(0));
+  });
+
+  it('caps the backoff at 300 seconds so a long outage still retries', async () => {
+    await repo.insert(envelope(17));
+    // 2^9 would be 512s; the cap keeps a recovered broker from waiting out an exponential curve.
+    await db.query('UPDATE ingest.event_buffer SET attempts = 8');
+    await db.withTransaction((client) => repo.markFailed(client, uuid(17), 'broker down'));
+
+    const { rows } = await db.query<{ seconds: number }>(
+      'SELECT EXTRACT(EPOCH FROM (next_attempt_at - now()))::float AS seconds FROM ingest.event_buffer',
+    );
+    expect(rows[0].seconds).toBeGreaterThan(295);
+    expect(rows[0].seconds).toBeLessThanOrEqual(300);
+  });
 });
 
 describe('failure accounting', () => {

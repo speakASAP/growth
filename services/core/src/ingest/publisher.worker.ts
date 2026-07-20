@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../db/database.service';
-import { IngestRepository, MAX_ATTEMPTS } from './ingest.repository';
+import { IngestRepository, MAX_ATTEMPTS, MAX_BACKOFF_SECONDS } from './ingest.repository';
 import { BufferedEvent } from './envelope.types';
 
 /**
@@ -14,9 +14,16 @@ export interface EventPublisher {
 
 export const EVENT_PUBLISHER = Symbol('EVENT_PUBLISHER');
 
-/** C-005 §5 — backoff is min(2^attempts, 300) seconds. */
+/**
+ * C-005 §5 — backoff is min(2^attempts, 300) seconds.
+ *
+ * Used for the log line only; the delay that actually governs the next claim is written to
+ * `next_attempt_at` by `IngestRepository.markFailed`. The two are kept in step by
+ * `backoff-agreement.db-spec.ts` — a log that promised a wait the database did not enforce would
+ * be worse than no log at all.
+ */
 export function backoffSeconds(attempts: number): number {
-  return Math.min(2 ** attempts, 300);
+  return Math.min(2 ** attempts, MAX_BACKOFF_SECONDS);
 }
 
 @Injectable()
@@ -26,7 +33,8 @@ export class PublisherWorker {
   constructor(
     private readonly db: DatabaseService,
     private readonly repository: IngestRepository,
-    private readonly publisher: EventPublisher,
+    // An interface has no runtime identity for Nest to resolve, so the publisher arrives by token.
+    @Inject(EVENT_PUBLISHER) private readonly publisher: EventPublisher,
   ) {}
 
   /**

@@ -28,6 +28,7 @@
     "@nestjs/platform-express": "^10.0.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
+    "amqplib": "^0.10.9",
     "canonicalize": "^2.0.0",
     "pg": "^8.11.3",
     "reflect-metadata": "^0.1.13",
@@ -37,6 +38,7 @@
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
+    "@types/amqplib": "^0.10.8",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.8",
     "@types/node": "^20.10.0",
@@ -57,6 +59,8 @@
     ],
     "rootDir": ".",
     "testRegex": ".*\\.(spec|db-spec)\\.ts$",
+    "_comment_maxWorkers": "The db-specs share one throwaway database and TRUNCATE between tests, so running suites in parallel makes them tear each other's rows out mid-test. test:db already passed --runInBand; plain `npm test` did not, which meant the two commands could disagree about whether the code worked. Serialising here costs about a second and removes that.",
+    "maxWorkers": 1,
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
