@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://alfares.cz/schemas/growth/registration.completed.v1.json",
-  "title": "Registration completed",
-  "description": "The conversion signal. gsid is passed raw - bazos-service does not hold the signing secret.",
+  "$id": "https://alfares.cz/schemas/growth/auth_redirect.initiated.v1.json",
+  "title": "Auth redirect initiated",
+  "description": "Attribution half of the registration join. Emitted by bazos-service at the moment of the click, BEFORE navigation to auth.alfares.cz - never on the return callback, which is not guaranteed. Joined to auth.user.registered.v1 on correlationId. See D-005.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -22,7 +22,7 @@
       "format": "uuid"
     },
     "eventType": {
-      "const": "growth.registration.completed.v1"
+      "const": "growth.auth_redirect.initiated.v1"
     },
     "eventVersion": {
       "type": "integer",
@@ -47,23 +47,23 @@
       "description": "OPTIONAL - root events have none"
     },
     "dataClass": {
-      "const": "personal"
+      "const": "anonymous"
     },
     "payload": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "registrationId",
-        "email",
-        "registeredAt"
+        "correlationId",
+        "initiatedAt"
       ],
       "properties": {
-        "registrationId": {
-          "type": "string"
+        "correlationId": {
+          "type": "string",
+          "description": "Opaque handle echoed back by auth-microservice via the `state` parameter. Join key."
         },
         "gsid": {
           "type": "string",
-          "description": "signed session token, raw and UNVERIFIED. Absent is a valid expected case (consent refused / cookie cleared / direct visit) - NOT an error"
+          "description": "signed session token, raw and UNVERIFIED - growth-core verifies (C-005 s4). Absent is a valid expected case (consent refused / cookie cleared / direct visit) - NOT an error"
         },
         "gsidSource": {
           "enum": [
@@ -71,16 +71,7 @@
             "query"
           ]
         },
-        "email": {
-          "type": "string",
-          "format": "email"
-        },
-        "phone": {
-          "type": "string",
-          "pattern": "^\\+[1-9]\\d{6,14}$",
-          "description": "E.164"
-        },
-        "registeredAt": {
+        "initiatedAt": {
           "type": "string",
           "format": "date-time"
         }

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfares.cz/schemas/auth/user.registered.v1.json",
+  "title": "User registered",
+  "description": "auth-microservice's first event. DELIBERATELY GENERIC and ecosystem-owned, not growth-owned: it must be reusable by S6, S10 and MS-P. No gsid, no experimentId, no growth concept may be added here - see EP-005 W3 and D-005 s3. correlationId is opaque to auth: round-tripped via `state`, never interpreted, never persisted beyond this event.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "workspaceId",
+    "correlationId",
+    "dataClass",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "auth.user.registered.v1"
+    },
+    "eventVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "auth-microservice"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": "string",
+      "description": "OPTIONAL - root events have none"
+    },
+    "dataClass": {
+      "const": "personal"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "email",
+        "registeredAt"
+      ],
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Identity of the registration. Replaces the never-minted registrationId."
+        },
+        "correlationId": {
+          "type": "string",
+          "description": "Opaque, from the `state` parameter. Absent on direct signups that did not come through a growth landing - a normal case, not an error."
+        },
+        "applicationContext": {
+          "type": "string",
+          "description": "Which application the registration came from. Generic - not an experiment id."
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "phone": {
+          "type": "string",
+          "pattern": "^\\+[1-9]\\d{6,14}$",
+          "description": "E.164"
+        },
+        "registeredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

@@ -69,17 +69,30 @@ Five bounded workstreams. No two touch the same file.
 > Growth correlates on its own side. Putting marketing attribution into the ecosystem's auth service would couple every future consumer to this experiment, and there is no way to undo that quietly later.
 >
 > `gsid` reaches growth through W4, not through auth.
+>
+> **Upheld 2026-07-20.** A draft of [D-005](../07_decisions/D-005-gsid-propagation-correction.md) §1
+> would have put `gsid` in this event; the owner rejected that in favour of the two-event join, and
+> D-005 §3 now records it. Contract: [C-005](../23_documentation_contracts/C-005-landing-and-ingestion.md)
+> §2.2b, schema `schemas/user.registered.v1.json`. The C-005 §7 test *"Auth event genericity"*
+> exists to keep this constraint from eroding — it asserts the payload carries no growth field.
 
 ### W4 — `bazos-service` gsid pass-through
 
 | | |
 |---|---|
 | **Role** | Worker agent |
-| **Output** | Read `gsid` (cookie first, query second), carry it through the redirect to Alfares Auth and back, expose it for correlation |
+| **Output** | Read `gsid` (cookie first, query second), mint a `correlationId`, emit `growth.auth_redirect.initiated.v1` **at click time before navigating**, and pass `correlationId` to auth via `state` |
 | **Allowed** | `bazos/services/bazos-service/src/ui/**` |
 | **Forbidden** | `bazos/services/bazos-service/src/channel/**` — publishing logic, governed by `docs/BAZOS_COMPLIANCE.md`, untouched by this slice |
-| **Depends on** | C-005 §4 signing scheme |
-| **Evidence** | `gsid` survives the round trip through auth; absent `gsid` does not break registration |
+| **Depends on** | C-005 §4 signing scheme · C-005 §2.2a |
+| **Evidence** | the event is emitted even when the visitor never returns from auth; `correlationId` survives the round trip; absent `gsid` does not break registration |
+
+> **`gsid` must not be put on the URL to `auth.alfares.cz`.** Only `correlationId` crosses. This is
+> what keeps the attribution token out of auth's access logs and `Referer` headers
+> ([D-005](../07_decisions/D-005-gsid-propagation-correction.md) §3 consequences).
+>
+> Emission must not depend on the auth callback: a visitor who registers and closes the tab has
+> registered. Emit server-side at the click, before `window.location.assign`.
 
 ### W5 — `leads-microservice` lead from registration
 
@@ -150,7 +163,7 @@ Each merges behind a feature flag as it completes. A finished service does not w
 
 Facts a worker needs and would otherwise re-derive:
 
-- Landing and registration are **same-origin** on `bazos.alfares.cz` — first-party cookie works without cross-domain machinery
+- ⚠️ ~~Landing and registration are **same-origin** on `bazos.alfares.cz` — first-party cookie works without cross-domain machinery~~ **False, corrected 2026-07-20.** Registration is on `auth.alfares.cz`, a sibling host: the cookie never arrives. The cookie stores `gsid` within the landing; a `correlationId` crosses the hop and the two events are joined. See [D-005](../07_decisions/D-005-gsid-propagation-correction.md)
 - The live landing already carries the full legal footer: privacy, cookies, GDPR, terms, **EU AI Act**, operator identity, "not affiliated with Bazoš.cz". A clone inherits it — do not rebuild
 - Money is a decimal **string**, never a float. The schema rejects floats; this is deliberate
 - `causationId` is optional — root events have none

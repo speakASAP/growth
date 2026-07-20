@@ -54,7 +54,7 @@
       "additionalProperties": false,
       "required": [
         "leadId",
-        "registrationId",
+        "userId",
         "sourceService",
         "createdAt"
       ],
@@ -62,11 +62,16 @@
         "leadId": {
           "type": "string"
         },
-        "registrationId": {
-          "type": "string"
+        "userId": {
+          "type": "string",
+          "description": "From auth.user.registered.v1. Replaces registrationId, which no service ever minted - see D-005."
+        },
+        "correlationId": {
+          "type": "string",
+          "description": "Carried through so a lead can be traced back to its touchpoint. Absent when the registration did not come through a growth landing."
         },
         "sourceService": {
-          "const": "bazos-service"
+          "const": "auth-microservice"
         },
         "createdAt": {
           "type": "string",

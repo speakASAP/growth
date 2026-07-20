@@ -118,11 +118,15 @@ Producer `leads-microservice` · consumer `growth-core` · `dataClass: "personal
 ```ts
 interface LeadCreatedFromRegistrationPayload {
   leadId:         string;
-  registrationId: string;
-  sourceService:  "bazos-service";
+  userId:         string;   // from auth.user.registered.v1 (§2.2b)
+  correlationId?: string;   // carried through so a lead can reach its touchpoint
+  sourceService:  "auth-microservice";
   createdAt:      string;
 }
 ```
+
+`registrationId` is gone: no service ever minted one. The registration's identity is the `userId`
+that `auth-microservice` assigns ([D-005](../07_decisions/D-005-gsid-propagation-correction.md)).
 
 Anchors `LeadQualificationEvent` (D19) — qualification attaches to this lead as a post-hoc quality assessment, not as the experiment's primary metric.
 
@@ -180,13 +184,19 @@ Browser retries reuse the same `eventId` — that is what makes `200` on duplica
 gsid       = base64url(sessionId) + "." + base64url(HMAC-SHA256(sessionId, secret))
 secret     = Vault  secret/prod/growth  →  GROWTH_GSID_HMAC_SECRET   (32 bytes, random)
 cookie     = Domain=bazos.alfares.cz · Path=/ · Secure · SameSite=Lax · Max-Age=7776000  (90d)
-transport  = query parameter `?gsid=<signed>` on the redirect to https://auth.alfares.cz/register
+transport  = `?state=<correlationId>` on the redirect to https://auth.alfares.cz/register
+             — `gsid` itself never crosses hosts
 ```
 
 **The cookie is a store, not the transport.** It carries `gsid` across navigation *within*
 `bazos.alfares.cz` so the value survives until the visitor clicks through to registration.
-It is never sent to `auth.alfares.cz` — a sibling host, not a subdomain — which is why the
-query parameter is the carrier across the hop ([D-005](../07_decisions/D-005-gsid-propagation-correction.md)).
+It is never sent to `auth.alfares.cz` — a sibling host, not a subdomain.
+
+**What crosses the hop is the opaque `correlationId`, not `gsid`**
+([D-005](../07_decisions/D-005-gsid-propagation-correction.md) §3). `bazos-service` reads `gsid`
+from the cookie and emits it to `growth-core` directly (§2.2a); only the join key travels through
+auth. This keeps the attribution token out of `auth-microservice`'s access logs and out of any
+`Referer` header sent from the registration page.
 
 **Verification** in `growth-core`, constant-time comparison:
 
