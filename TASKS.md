@@ -4,16 +4,26 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
 
 ## Open
 
-- [ ] **S1a VERIFY** — owner manual check from F-001: launch an experiment, attempt an edit,
-      raise the budget mid-run, stop without a reason, stop with one, read the story back.
-      **No longer blocked** — `growth-core` is deployed and healthy. This is the only thing
-      standing between S1a and done, and it needs the owner, not an agent.
+- [ ] **S1a VERIFY** — owner manual check from F-001. **The only thing standing between S1a and
+      done**, and it needs the owner, not an agent: steps 1, 5 and 6 are judgements about whether
+      the record reads back as a decision in your own words.
 
-      `growth-core` is ClusterIP-only, so the checks run from inside the cluster:
-      `kubectl -n statex-apps exec deploy/growth-core -c app -- node -e "..."` against
-      `localhost:3376`, or a `kubectl port-forward svc/growth-core 3376:3376`.
-      Note `POST /ingest/events` takes a bare JSON **array** of envelopes (or one envelope
-      object), not a `{"events": [...]}` wrapper.
+      Run `./scripts/s1a-verify.sh` (add `DRY_RUN=1` first — `decision_artefact` is append-only,
+      so a typo committed to production stays there):
+
+      ```
+      DRY_RUN=1 ./scripts/s1a-verify.sh launch "<hypothesis>" "<rationale>"
+                ./scripts/s1a-verify.sh launch "<hypothesis>" "<rationale>"   # 1 → 201
+                ./scripts/s1a-verify.sh edit                                  # 2 → 409 refused
+                ./scripts/s1a-verify.sh budget "<reason>" 2500.00             # 5 → 201
+                ./scripts/s1a-verify.sh stop-bare                             # 4 → 422 refused
+                ./scripts/s1a-verify.sh stop "<reason>"                       # 6 → 201
+                ./scripts/s1a-verify.sh story                                 # 3, 6 → read back
+      ```
+
+      Step 3 ("read it back three days later") is the one that cannot be scripted or hurried: come
+      back to `story` after a few days and see whether it still explains *why*, without your memory
+      of the day filling the gaps. That is the whole feature — everything else is plumbing.
 
 - [ ] **`growth-core` does not consume `auth.events` yet.** W3 is emitting and the registrations
       are piling up in the durable queue `growth.auth-registrations` (bound to
