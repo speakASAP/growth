@@ -29,6 +29,14 @@ interface GrowthEventEnvelope<TPayload extends object> {
 
 > ⚠️ **Ecosystem inconsistency noted, not fixed here.** `orders-microservice` names this field `source`; `leads-microservice` names it `producer`. Growth follows `producer`, matching architecture §4.6 and `leads` — which is in this slice. Reconciling `orders` is out of scope and should not be done incidentally.
 
+> **`workspaceId` is a growth field and applies to growth-produced events only** (owner, 2026-07-21).
+> `auth.user.registered.v1` (§2.2b) is produced by shared ecosystem infrastructure and carries no
+> `workspaceId`: requiring one would put a growth concept inside `auth-microservice`, which
+> [EP-005](../21_execution_plans/EP-005-landing-and-ingestion.md) W3 forbids outright. `growth-core`
+> resolves the workspace on consumption, where the knowledge actually lives. The alternative
+> considered — auth emitting a constant — was rejected because a field that is always the same
+> value reads as meaningful to the next person and is not.
+
 `dataClass` drives the retention job: `anonymous` → 14 months, `personal` → severed on erasure request, `operational` → indefinite.
 
 ---
@@ -91,12 +99,16 @@ who registers and then closes the tab has still produced this half of the join.
 #### 2.2b `auth.user.registered.v1`
 
 Producer `auth-microservice` · consumers `growth-core`, `leads-microservice` · `dataClass: "personal"`
+Exchange `auth.events` · routing key `auth.user.registered.v1` · **no `workspaceId`** (see §1)
 
 ```ts
 interface UserRegisteredPayload {
   userId:              string;
+  email?:              string;
+  phone?:              string;   // E.164
   correlationId?:      string;   // opaque, round-tripped through `state`; absent on direct signups
   applicationContext?: string;   // which application the registration came from
+  registrationMethod:  "password" | "oauth" | "magic_link";
   registeredAt:        string;
 }
 ```
@@ -104,6 +116,28 @@ interface UserRegisteredPayload {
 **Deliberately generic.** No `gsid`, no `experimentId`, no growth concept — this event is meant to
 be reused by S6, S10 and MS-P, per the delivery plan. `auth-microservice` treats `correlationId`
 as an opaque string: it neither interprets nor persists it beyond the emitted event.
+
+##### What counts as a registration (owner, 2026-07-21)
+
+`auth-microservice` creates a user row in **five** places, and three of them do not mean a person
+has registered. The event fires on **proven identity**, not on a row appearing:
+
+| Path | Emits | Why |
+|---|---|---|
+| `POST /register` (password) | ✅ at creation | the person set a credential |
+| OAuth callback | ✅ at creation of a new user | the provider vouched for the identity |
+| Magic link | ✅ on **first successful verification** | not on request — see below |
+| `POST /register-contact` | ❌ | provisioning only: returns `authenticated: false`, `isVerified: false`. It is a contact-capture form, not a registration |
+| `createMagicLinkToken` | ❌ | internal helper for the above; the verification path emits |
+
+**Magic link emits on verification, never on request.** `requestMagicLink` creates a user row for
+whatever address was typed, before anyone has proven they can read that inbox. Emitting there would
+let a typo — or anyone entering a stranger's address — register as a conversion, and those numbers
+feed budget decisions. A registration that fires when someone *asks* to log in is not a
+registration.
+
+Consequence, and it is the right one: measured registrations will be **lower** than the user-row
+count. The MS-002 report states both.
 
 `growth-core` joins 2.2a to 2.2b on `correlationId`, verifies the `gsid` signature (§4), and creates
 the `IdentityLink`. The two halves may arrive **in either order**, and 2.2a may never get its

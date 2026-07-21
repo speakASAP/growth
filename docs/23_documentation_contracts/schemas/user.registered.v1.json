@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://alfares.cz/schemas/auth/user.registered.v1.json",
   "title": "User registered",
-  "description": "auth-microservice's first event. DELIBERATELY GENERIC and ecosystem-owned, not growth-owned: it must be reusable by S6, S10 and MS-P. No gsid, no experimentId, no growth concept may be added here - see EP-005 W3 and D-005 s3. correlationId is opaque to auth: round-tripped via `state`, never interpreted, never persisted beyond this event.",
+  "description": "auth-microservice's first event. DELIBERATELY GENERIC and ecosystem-owned, not growth-owned: it must be reusable by S6, S10 and MS-P. No gsid, no experimentId, no workspaceId, no growth concept may be added here - see EP-005 W3 and D-005 s3. workspaceId is deliberately absent: it is a growth concept, and growth-core resolves it on consumption (C-005 s1, owner 2026-07-21). correlationId is opaque to auth: round-tripped via `state`, never interpreted, never persisted beyond this event. Emitted on PROVEN identity only - password registration, OAuth callback, and magic-link VERIFICATION - never on magic-link request or contact provisioning (C-005 s2.2b).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,7 +11,6 @@
     "eventVersion",
     "occurredAt",
     "producer",
-    "workspaceId",
     "correlationId",
     "dataClass",
     "payload"
@@ -35,12 +34,9 @@
     "producer": {
       "const": "auth-microservice"
     },
-    "workspaceId": {
-      "type": "string",
-      "minLength": 1
-    },
     "correlationId": {
-      "type": "string"
+      "type": "string",
+      "description": "Envelope-level tracing id, always present. Distinct from payload.correlationId, which is the growth join key and is absent on direct signups."
     },
     "causationId": {
       "type": "string",
@@ -54,7 +50,7 @@
       "additionalProperties": false,
       "required": [
         "userId",
-        "email",
+        "registrationMethod",
         "registeredAt"
       ],
       "properties": {
@@ -70,9 +66,14 @@
           "type": "string",
           "description": "Which application the registration came from. Generic - not an experiment id."
         },
+        "registrationMethod": {
+          "enum": ["password", "oauth", "magic_link"],
+          "description": "Which proven-identity path produced this registration. Contact provisioning is not one of them - it emits no event."
+        },
         "email": {
           "type": "string",
-          "format": "email"
+          "format": "email",
+          "description": "OPTIONAL - a user registered by phone may have none."
         },
         "phone": {
           "type": "string",

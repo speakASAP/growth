@@ -17,19 +17,21 @@ const validRedirect = () => ({
   },
 });
 
+// No `workspaceId`: this event comes from shared ecosystem infrastructure, which has no growth
+// concepts in it. growth-core resolves the workspace when it consumes (C-005 §1).
 const validRegistration = () => ({
   eventId: '4f6c9d1e-1b2a-4c3d-8e5f-6a7b8c9d0e2a',
   eventType: 'auth.user.registered.v1',
   eventVersion: 1,
   occurredAt: '2026-07-20T10:05:00.000Z',
   producer: 'auth-microservice',
-  workspaceId: 'ws-1',
   correlationId: 'corr-1',
   dataClass: 'personal',
   payload: {
     userId: 'user-1',
     correlationId: 'corr-1',
     email: 'someone@example.com',
+    registrationMethod: 'password',
     registeredAt: '2026-07-20T10:05:00.000Z',
   },
 });
@@ -86,7 +88,7 @@ describe('validateEnvelope', () => {
     // This is the executable half of a constraint that is otherwise only prose. If someone adds
     // gsid to auth's event to make an attribution bug go away, this fails rather than shipping
     // a growth concept into shared ecosystem infrastructure.
-    it.each(['gsid', 'experimentId', 'gsidSource', 'landingVersionId'])(
+    it.each(['gsid', 'experimentId', 'gsidSource', 'landingVersionId', 'workspaceId'])(
       'rejects a registration payload carrying %s',
       (field) => {
         const envelope = validRegistration();
@@ -94,6 +96,20 @@ describe('validateEnvelope', () => {
         expect(validateEnvelope(envelope).length).toBeGreaterThan(0);
       },
     );
+
+    it('rejects workspaceId on the envelope, not only in the payload', () => {
+      // workspaceId is a growth concept. Putting it on auth's event would make every future
+      // consumer of shared infrastructure inherit growth's tenancy model, and there is no quiet
+      // way to take that back later (C-005 §1, owner 2026-07-21).
+      const envelope = { ...validRegistration(), workspaceId: 'ws-1' };
+      expect(validateEnvelope(envelope).length).toBeGreaterThan(0);
+    });
+
+    it('still accepts the growth-produced events that do carry workspaceId', () => {
+      // The rule is "auth's event has no workspaceId", not "workspaceId is gone" — growth's own
+      // events are scoped by it and must keep validating.
+      expect(validateEnvelope(validRedirect())).toEqual([]);
+    });
   });
 
   it('knows exactly the event types the contract defines', () => {
