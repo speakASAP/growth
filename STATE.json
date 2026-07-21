@@ -3,7 +3,7 @@
   "health": "ok",
   "deployed": true,
   "slice": "S5",
-  "gate": "S1a IMPL complete + deployed, owner VERIFY pending; S5 receiving side complete end to end (W1 + W6), producers W3/W4/W2/W5 outstanding",
+  "gate": "S1a IMPL complete + deployed, owner VERIFY pending; S5 W1 + W6 + W3 done and live, producers W4/W2/W5 outstanding, and growth-core does not consume auth.events yet",
   "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 planned at S5",
   "containers": {
     "growth-core": { "source": "services/core", "port": 3376, "deployed": true, "ingress": false }
@@ -15,10 +15,11 @@
     "note": "Roles split 2026-07-20. The runtime role holds DML grants only and owns nothing, so it cannot disable the decision_artefact append-only trigger. Migrations 001-003 applied in production."
   },
   "broker": {
-    "exchange": "growth.events",
-    "type": "topic, durable",
-    "routingKey": "the event type",
-    "note": "No consumer is bound yet. A topic exchange discards messages with no matching binding, so the first consumer must declare its queue and binding before the producer it depends on goes live."
+    "exchanges": {
+      "growth.events": "topic, durable, routing key = event type. Produced by growth-core's ingest drain. No consumer bound yet.",
+      "auth.events": "topic, durable. Produced by auth-microservice (W3). Queue growth.auth-registrations is bound to auth.user.registered.v1 and accumulating; growth-core does not consume it yet."
+    },
+    "note": "A topic exchange discards messages with no matching binding, so a consumer must declare its queue and binding BEFORE the producer it depends on goes live. growth.auth-registrations was declared ahead of W3's deploy for exactly this reason. It has no consumer and grows unbounded."
   },
   "notes": "149 passing tests. Verified in production 2026-07-20: /health ok, POST /ingest/events returns 202 then 200 on replay, an event posted end to end arrived verbatim in a queue bound to growth.events and its buffer row reached status=published, and the runtime role was refused DISABLE TRIGGER and UPDATE. Drain runs every 5s; retention sweep at 03:00 Europe/Prague."
 }

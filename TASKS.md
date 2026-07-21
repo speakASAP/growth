@@ -15,15 +15,29 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       Note `POST /ingest/events` takes a bare JSON **array** of envelopes (or one envelope
       object), not a `{"events": [...]}` wrapper.
 
-- [ ] **S5 producers — W3, W4, W2, W5.** The receiving side is complete and live; nothing yet
-      emits into it. Next in EP-005 merge order is **W3** (`auth-microservice` emits a generic
-      `auth.user.registered.v1`), which is the largest task in the slice and touches shared
-      infrastructure — every application's login. Fullest regression evidence required.
+- [ ] **`growth-core` does not consume `auth.events` yet.** W3 is emitting and the registrations
+      are piling up in the durable queue `growth.auth-registrations` (bound to
+      `auth.user.registered.v1`), so nothing is being lost — but nothing is joined either. This is
+      the remaining half of W1: consume the queue, join to
+      `growth.auth_redirect.initiated.v1` on `correlationId`, resolve the `workspaceId` growth
+      owns, and build the `IdentityLink`. The queue has no consumer and grows unbounded; fine at
+      first-experiment volume, worth watching.
 
-- [ ] **Consumers of `growth.events` are unbound.** The exchange is a durable topic exchange, so
-      a message with no matching binding is discarded silently. Nothing consumes growth events
-      yet, which is correct for now — but the first consumer must declare its queue and binding
-      before the producer it cares about goes live, or the events will look published and be gone.
+- [ ] **S5 producers — W4, W2, W5.** Next in EP-005 merge order is **W4** (`bazos-service` mints a
+      `correlationId`, emits `growth.auth_redirect.initiated.v1` at click time and passes the
+      correlationId to auth via `state`). W5 (leads from registration) is unblocked now that W3 is
+      flowing.
+
+- [ ] **The hosted auth page must forward `state` on password registration.** `RegisterDto` now
+      accepts it and auth echoes it into the event, but the join only works if whatever renders
+      the registration form actually sends it. Verify as part of W4/W2 — without it every password
+      registration arrives with no `correlationId` and is unattributable, and it would look like
+      a growth-core join bug rather than a missing form field.
+
+- [ ] **Consumers of `growth.events` are unbound.** A topic exchange discards a message with no
+      matching binding. Nothing consumes growth's own events yet — the first consumer must declare
+      its queue and binding before the producer it cares about goes live, or the events will look
+      published and be gone. (`auth.events` is already covered by the queue above.)
 
 - [ ] **Pin the migrate init container to the build tag.** The shared runner's `kubectl set image`
       targets the `app` container only, so the `migrate` init container keeps `:latest`. Both tags
@@ -41,6 +55,43 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-21 — W3: `auth-microservice` emits `auth.user.registered.v1`.** The conversion
+      signal the first experiment depends on now has a producer. Exchange `auth.events` (topic,
+      durable), routing key = event type. Verified live: a registration returned 201 and the event
+      arrived in `growth.auth-registrations` with the `correlationId` round-tripped from `state`.
+      71 auth tests before, 92 after, none of the baseline lost — the changed paths had **no**
+      coverage at all beforehand.
+
+      Two contract defects surfaced and were decided by the owner:
+
+      - **The schema required `workspaceId` while EP-005 W3 forbids growth concepts in auth** — the
+        contract contradicted itself. `workspaceId` is growth's tenancy model; growth-core resolves
+        it on consumption. Emitting a constant was rejected: a field that is always the same value
+        reads as meaningful and is not.
+      - **"On successful registration" was ambiguous.** auth creates a user row in five places and
+        three of them prove nothing — `register-contact` is a contact form (`authenticated: false`),
+        and `requestMagicLink` creates a row for whatever address was typed. The event fires on
+        proven identity only. Measured registrations will be lower than the user-row count; MS-002
+        states both.
+
+      `verifyMagicLink` runs on every magic-link login, not only the first, so the event id is
+      derived from the user id (uuidv5) and repeats collide with the buffer's primary key. That
+      reuses the idempotency already in the contract instead of adding state, and avoids touching
+      `isVerified`, which admin listings filter on.
+
+      ⚠️ **No outbox in auth.** A failed publish is lost — logged with the complete envelope for
+      manual replay, but not retried. The service has no migration runner, so the outbox table has
+      nowhere to go until that is solved. RabbitMQ is a single-replica StatefulSet, so the loss
+      window is real. Tracked in `auth-microservice/TASKS.md`.
+
+      ⚠️ **Deploy trap, fixed:** `envsubst` in auth's `deploy.config.sh` uses an allow-list *and*
+      reads the environment, so the `: "${VAR:=default}"` idiom used by neighbouring variables
+      silently produced an empty `RABBITMQ_URL` — the surrounding defaults only work because `.env`
+      already exported those names under `set -a`.
+
+      A test user `w3-verify-*@example.invalid` remains in the `users` table from the live check.
+      Not removed: `auth-microservice/CLAUDE.md` forbids agents writing to `users` directly.
 
 - [x] **2026-07-20 — W6: the buffer drains to RabbitMQ.** `growth.events` (durable topic
       exchange, routing key = event type, the `catalog.events`/`orders.events` convention).

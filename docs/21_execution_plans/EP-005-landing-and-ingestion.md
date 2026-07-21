@@ -53,7 +53,21 @@ Five bounded workstreams. No two touch the same file.
 | **Depends on** | W1 endpoint deployed (contract is enough to start; deployment needed to verify) |
 | **Evidence** | Producer schema-conformance test; consent-refusal path leaves no cookie |
 
-### W3 — `auth-microservice` registration event ⚠️ largest task
+### W3 — `auth-microservice` registration event ✅ **done 2026-07-21**
+
+> Published to the `auth.events` topic exchange; verified live — a registration returned 201 and the
+> event reached `growth.auth-registrations` with the `correlationId` round-tripped from `state`.
+> 71 auth tests before, 92 after, none of the baseline lost.
+>
+> Two contract corrections came out of it, both recorded in C-005: `workspaceId` is gone from the
+> event (it is a growth concept and this is shared infrastructure), and "registration" now means
+> **proven identity** rather than a user row appearing — auth creates users in five places and
+> three of them prove nothing, including `requestMagicLink`, which creates a row for whatever
+> address was typed.
+>
+> ⚠️ **No outbox.** A failed publish is lost and logged, not retried; `auth-microservice` has no
+> migration runner, so the table the outbox pattern needs cannot be added without solving that
+> first. Recorded in `auth-microservice/TASKS.md`.
 
 | | |
 |---|---|
@@ -124,12 +138,18 @@ shared/ECOSYSTEM_MAP.md
 Contracts first, then producers, then consumers, then read models — the standard's rule.
 
 ```
-1. W3  auth.user.registered.v1          ← nothing else can be correlated without it
-2. W1  growth-core ingestion + buffer   ← endpoint must exist before W2 can emit
-3. W4  bazos gsid pass-through          ← needs the signing scheme live
+1. W3  auth.user.registered.v1          ✅ done 2026-07-21, live on auth.events
+2. W1  growth-core ingestion + buffer   ✅ done 2026-07-20, drains to growth.events (W6)
+3. W4  bazos gsid pass-through          ← NEXT. needs the signing scheme live
 4. W2  growth-web landing               ← needs W1 endpoint deployed
-5. W5  leads from registration          ← needs W3 event flowing
+5. W5  leads from registration          ← W3 is flowing, so this is unblocked
 ```
+
+**Not yet consumed.** `growth-core` does not read `auth.events` yet — that is the remaining piece
+of W1. A durable queue `growth.auth-registrations` is already bound to
+`auth.user.registered.v1`, so registrations accumulate there instead of being discarded by the
+topic exchange, and nothing is lost while the consumer is written. It has no consumer, so it grows
+unbounded: fine at first-experiment volume, worth watching.
 
 W3 and W1 are independent and may run in parallel. W2 cannot be verified before W1 is deployed, though it can be built against the contract.
 

@@ -75,7 +75,7 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 |---|---|---|---|---|
 | **S1a** | **Decision record** — `DecisionArtefact` + canonical hash | growth-core (`services/core/`) | M1 | 🔨 **IMPL готов (110 тестов), развёрнут в проде 2026-07-20, ждёт owner VERIFY** — больше ничем не блокирован · [F-001](../10_features/F-001-decision-record-and-governance.md) · [C-001](../23_documentation_contracts/C-001-decision-record.md) · [D-004](../07_decisions/D-004-decision-artefact-shape-and-hash.md) |
 | **S1b** | Execution governance — `ApprovalGrant` + `approvedParametersHash`, `ExecutionAttempt` + `effectKey`, budget ceilings, fix in-memory idempotency | goalkeeper · growth-core | **M3** — не нужен до первой записи в API | ◷ |
-| **S5** | Landing runtime, durable edge→core ingestion, consent evidence, UTM + click-ID, `AnonymousTouchpoint`, `IdentityLink` | growth-web · growth-core · **auth** · bazos · leads | M1 | 🔨 **приём + публикация готовы (W1, W6)** — событие проходит `POST /ingest/events` → буфер → exchange `growth.events`, проверено в проде. Дальше по порядку слияния [EP-005](../21_execution_plans/EP-005-landing-and-ingestion.md): W3 (auth, shared infra) → W4 → W2 → W5. Потребителей у `growth.events` пока нет |
+| **S5** | Landing runtime, durable edge→core ingestion, consent evidence, UTM + click-ID, `AnonymousTouchpoint`, `IdentityLink` | growth-web · growth-core · **auth** · bazos · leads | M1 | 🔨 **W1, W6, W3 готовы** — приём → буфер → `growth.events` работает в проде; `auth` эмитит `auth.user.registered.v1` в `auth.events`, регистрации копятся в durable-очереди `growth.auth-registrations`. Дальше по [EP-005](../21_execution_plans/EP-005-landing-and-ingestion.md): W4 (bazos `gsid`) → W2 (landing) → W5 (leads). Консьюмера `auth.events` в growth-core ещё нет |
 | **S6** | Qualification — `LeadQualificationEvent`, `criteriaVersion: v1-owner-manual`, manual marking surface, `ManualSpendObservation` | leads · growth-core | M1 | ◷ |
 | **S7** | **Universal revenue adapter** — canonical `revenue.recognised`, flipflop as first client (§6) | orders · payments · growth-core · flipflop | M2 | ◷ |
 | **S8** | Google Ads connector — read-only metrics, `SpendObservation` + reconciliation | growth-core | M2 | ◷ |
@@ -93,9 +93,21 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 
 ### Найдено при подготовке EP-005 — влияет на другие срезы
 
-**`auth-microservice` не эмитит никаких событий.** Ни RabbitMQ, ни amqp во всём `src/`. Регистрация пользователя порождает только строку в логе.
+~~**`auth-microservice` не эмитит никаких событий.**~~ **Закрыто 2026-07-21 (W3).** `auth` эмитит
+`auth.user.registered.v1` в `auth.events`. Событие намеренно generic и переиспользуемое: S6
+(квалификация), S10 (загрузка конверсий) и MS-P подключаются к нему без изменений в auth. Ни
+`gsid`, ни `experimentId`, ни `workspaceId` в него добавлять нельзя — это проверяется тестами с
+обеих сторон.
 
-Это не только проблема S5. Любой срез, которому нужно знать о событиях пользователей — S6 (квалификация), S10 (загрузка конверсий), MS-P (каналы связи) — упрётся в то же самое. Первое подключение событий к auth стоит спроектировать как переиспользуемое, а не под нужды одного среза.
+**Осталось от этой находки:** в auth нет outbox — неудачная публикация теряется (пишется в лог
+целиком для ручного повтора). У сервиса нет механизма миграций, поэтому таблицу outbox сначала
+некуда положить. Подробности в `auth-microservice/TASKS.md`.
+
+**Что «регистрация» значит.** Пользователь создаётся в пяти местах, и три из них ничего не
+доказывают: `register-contact` — это форма захвата контакта (`authenticated: false`), а
+`requestMagicLink` создаёт запись по любому введённому адресу. Событие эмитится только по
+подтверждённой личности, поэтому измеренные регистрации будут **ниже** числа строк в `users` —
+в отчёте MS-002 указывать обе величины.
 
 ### Why S2–S4 are a parallel track, not a gate
 
