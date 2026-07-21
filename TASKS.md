@@ -23,16 +23,22 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       owns, and build the `IdentityLink`. The queue has no consumer and grows unbounded; fine at
       first-experiment volume, worth watching.
 
-- [ ] **S5 producers — W4, W2, W5.** Next in EP-005 merge order is **W4** (`bazos-service` mints a
-      `correlationId`, emits `growth.auth_redirect.initiated.v1` at click time and passes the
-      correlationId to auth via `state`). W5 (leads from registration) is unblocked now that W3 is
-      flowing.
+- [ ] **S5 producers — W4, W2, W5.** Next in EP-005 merge order is **W4**. The auth half of the
+      round trip is already done and verified live, so W4 is smaller than the plan implies: it only
+      has to emit `growth.auth_redirect.initiated.v1` at click time carrying **the `state` value
+      bazos already mints**.
 
-- [ ] **The hosted auth page must forward `state` on password registration.** `RegisterDto` now
-      accepts it and auth echoes it into the event, but the join only works if whatever renders
-      the registration form actually sends it. Verify as part of W4/W2 — without it every password
-      registration arrives with no `correlationId` and is unattributable, and it would look like
-      a growth-core join bug rather than a missing form field.
+      ⚠️ **`state` is already bazos's CSRF token** (`createState()` in `ui.assets.ts`, checked on
+      callback). Reuse that value as the `correlationId` — do not mint a second one and do not add
+      a second query parameter. Full note in [EP-005](docs/21_execution_plans/EP-005-landing-and-ingestion.md) §W4.
+
+      `gsid` will be absent until W2 sets the cookie; that is the contract's expected path, not a
+      defect. W5 (leads from registration) is unblocked now that W3 is flowing.
+
+- [ ] **Vault `GROWTH_GSID_HMAC_SECRET` is stored but unused.** Generated 2026-07-21 at
+      `secret/prod/growth` (32 random bytes) so W2 and W4 are not blocked on it. Nothing reads it
+      yet: `gsid` signing arrives with the landing runtime. It is **not** yet wired into any
+      ExternalSecret.
 
 - [ ] **Consumers of `growth.events` are unbound.** A topic exchange discards a message with no
       matching binding. Nothing consumes growth's own events yet — the first consumer must declare
@@ -55,6 +61,16 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-21 — the `state` round trip is closed end to end.** The hosted auth page had
+      `state` in scope for the token handoff but left it out of the register payload, so every
+      password registration through the hosted flow would have arrived unattributable. One line in
+      `web/public/index.html`, guarded by a test in `hosted-auth-web.spec.ts` — the symptom of this
+      bug appears downstream as a join that never matches, so the search would have started in
+      growth-core rather than in a form field.
+
+      Verified live: `POST /auth/register` with `state` → `auth.user.registered.v1` carrying that
+      value as both the envelope and payload `correlationId`.
 
 - [x] **2026-07-21 — W3: `auth-microservice` emits `auth.user.registered.v1`.** The conversion
       signal the first experiment depends on now has a producer. Exchange `auth.events` (topic,

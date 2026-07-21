@@ -107,6 +107,28 @@ Five bounded workstreams. No two touch the same file.
 >
 > Emission must not depend on the auth callback: a visitor who registers and closes the tab has
 > registered. Emit server-side at the click, before `window.location.assign`.
+>
+> ### ⚠️ Read before starting W4 — `state` is already taken (found 2026-07-21)
+>
+> `startHostedAuth()` in `bazos/services/bazos-service/src/ui/ui.assets.ts` **already sends a
+> `state`**: `createState()` mints one per attempt, stores it in `sessionStorage` under
+> `bazosAuthState`, and the callback checks it. It is bazos's CSRF guard. Overwriting it with a
+> freshly minted `correlationId` would break that check.
+>
+> **Do not add a second parameter. Use the existing `state` value as the `correlationId`.** It is
+> already a unique, opaque, per-attempt handle that auth round-trips — exactly what the join needs
+> — and it stays opaque to auth either way. Its CSRF role is unaffected by growth also treating it
+> as a join key.
+>
+> **The auth half of the round trip is already done and live:** `RegisterDto` accepts `state`, the
+> hosted page at `web/public/index.html` forwards it on register, and `auth.user.registered.v1`
+> carries it as `payload.correlationId`. Verified end to end on 2026-07-21. W4 only has to emit
+> the matching `growth.auth_redirect.initiated.v1` with the *same* value.
+>
+> **`gsid` will be absent until W2 exists.** Nothing sets the cookie on `bazos.alfares.cz` yet, so
+> W4 emits `correlationId` alone at first. That is the contract's expected path (§2.2a), not a
+> defect — the join still links a registration to a click, it just has no ad touchpoint to
+> attribute it to until the landing runtime lands.
 
 ### W5 — `leads-microservice` lead from registration
 
