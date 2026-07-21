@@ -3,7 +3,7 @@
   "health": "ok",
   "deployed": true,
   "slice": "S5",
-  "gate": "S1a IMPL complete + deployed, owner VERIFY pending; S5 W1 + W6 + W3 done and live, producers W4/W2/W5 outstanding, and growth-core does not consume auth.events yet",
+  "gate": "S1a IMPL owner-confirmed correct, VERIFY (F-001 manual check) still pending; S5 W1 + W6 + W3 + W4 done and live. Both halves of the registration join now exist in production and NOTHING JOINS THEM — that is the next task. W2/W5 outstanding.",
   "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 planned at S5",
   "containers": {
     "growth-core": { "source": "services/core", "port": 3376, "deployed": true, "ingress": false }
@@ -16,7 +16,7 @@
   },
   "broker": {
     "exchanges": {
-      "growth.events": "topic, durable, routing key = event type. Produced by growth-core's ingest drain. No consumer bound yet.",
+      "growth.events": "topic, durable, routing key = event type. Produced by growth-core's ingest drain, now carrying growth.auth_redirect.initiated.v1 from bazos-service (W4). NO CONSUMER BOUND — a topic exchange discards unmatched messages, so clicks are currently being dropped. Bind a durable queue before relying on them.",
       "auth.events": "topic, durable. Produced by auth-microservice (W3). Queue growth.auth-registrations is bound to auth.user.registered.v1 and accumulating; growth-core does not consume it yet."
     },
     "note": "A topic exchange discards messages with no matching binding, so a consumer must declare its queue and binding BEFORE the producer it depends on goes live. growth.auth-registrations was declared ahead of W3's deploy for exactly this reason. It has no consumer and grows unbounded."

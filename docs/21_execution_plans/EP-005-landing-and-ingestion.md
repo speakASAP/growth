@@ -90,7 +90,20 @@ Five bounded workstreams. No two touch the same file.
 > §2.2b, schema `schemas/user.registered.v1.json`. The C-005 §7 test *"Auth event genericity"*
 > exists to keep this constraint from eroding — it asserts the payload carries no growth field.
 
-### W4 — `bazos-service` gsid pass-through
+### W4 — `bazos-service` gsid pass-through ✅ **done 2026-07-21**
+
+> `POST /ui/auth-redirect` (unauthenticated, 204 always) records the click and forwards
+> `growth.auth_redirect.initiated.v1` to growth-core's ingest endpoint. Verified live: with a
+> `gsid` cookie the event reached `growth.events` carrying `gsid` + `gsidSource: cookie`; without
+> one it arrived with `correlationId` alone, which is the contract's expected path.
+>
+> **The join key is the `state` bazos already mints** — see the note above. `gsid` is read
+> server-side from the request cookie, never sent by the page, so it stays off any URL bound for
+> auth. Emission uses `keepalive` and is not awaited: it must outlive the navigation without
+> delaying it.
+>
+> `bazos-service` had a `jest.config.js` and an orphaned spec but **neither jest nor ts-jest
+> installed**, so nothing in that service had ever been run. Installed; suite went 17 → 43.
 
 | | |
 |---|---|
@@ -162,10 +175,16 @@ Contracts first, then producers, then consumers, then read models — the standa
 ```
 1. W3  auth.user.registered.v1          ✅ done 2026-07-21, live on auth.events
 2. W1  growth-core ingestion + buffer   ✅ done 2026-07-20, drains to growth.events (W6)
-3. W4  bazos gsid pass-through          ← NEXT. needs the signing scheme live
+3. W4  bazos gsid pass-through          ✅ done 2026-07-21, live on growth.events
 4. W2  growth-web landing               ← needs W1 endpoint deployed
 5. W5  leads from registration          ← W3 is flowing, so this is unblocked
 ```
+
+**Both halves of the join now exist in production and nothing joins them.** That is the next piece
+of work and it is the remaining half of W1: consume `auth.events` and `growth.events`, match on
+`correlationId`, verify the `gsid` signature (§4), resolve the `workspaceId` growth owns, and build
+the `IdentityLink`. Until it lands, the two events sit in separate queues describing the same
+person without knowing it.
 
 **Not yet consumed.** `growth-core` does not read `auth.events` yet — that is the remaining piece
 of W1. A durable queue `growth.auth-registrations` is already bound to

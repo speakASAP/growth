@@ -8,6 +8,11 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       done**, and it needs the owner, not an agent: steps 1, 5 and 6 are judgements about whether
       the record reads back as a decision in your own words.
 
+      > **Implementation confirmed correct by the owner, 2026-07-21.** That closes IMPL, not
+      > VERIFY. The six steps below have not been run, and this line stays open until they are —
+      > recording a check that did not happen, in the system whose entire purpose is a decision
+      > record you can trust, would be the one failure worth avoiding above all others here.
+
       Run `./scripts/s1a-verify.sh` (add `DRY_RUN=1` first — `decision_artefact` is append-only,
       so a typo committed to production stays there):
 
@@ -25,25 +30,25 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       back to `story` after a few days and see whether it still explains *why*, without your memory
       of the day filling the gaps. That is the whole feature — everything else is plumbing.
 
-- [ ] **`growth-core` does not consume `auth.events` yet.** W3 is emitting and the registrations
-      are piling up in the durable queue `growth.auth-registrations` (bound to
-      `auth.user.registered.v1`), so nothing is being lost — but nothing is joined either. This is
-      the remaining half of W1: consume the queue, join to
-      `growth.auth_redirect.initiated.v1` on `correlationId`, resolve the `workspaceId` growth
-      owns, and build the `IdentityLink`. The queue has no consumer and grows unbounded; fine at
-      first-experiment volume, worth watching.
+- [ ] **NEXT — nothing joins the two halves.** Both now exist in production and neither knows
+      about the other: `auth.user.registered.v1` accumulates in `growth.auth-registrations`, and
+      `growth.auth_redirect.initiated.v1` reaches `growth.events` with no consumer bound at all —
+      so **clicks are currently discarded by the topic exchange**, unlike registrations. Bind a
+      durable queue before relying on any of them.
 
-- [ ] **S5 producers — W4, W2, W5.** Next in EP-005 merge order is **W4**. The auth half of the
-      round trip is already done and verified live, so W4 is smaller than the plan implies: it only
-      has to emit `growth.auth_redirect.initiated.v1` at click time carrying **the `state` value
-      bazos already mints**.
+      This is the remaining half of W1: consume both, match on `correlationId`, verify the `gsid`
+      signature (C-005 §4, secret already in Vault), resolve the `workspaceId` growth owns, and
+      build the `IdentityLink`. The contract requires the halves to join in **either arrival
+      order**, and a half with no partner (visitor abandoned registration) must be normal rather
+      than an error.
 
-      ⚠️ **`state` is already bazos's CSRF token** (`createState()` in `ui.assets.ts`, checked on
-      callback). Reuse that value as the `correlationId` — do not mint a second one and do not add
-      a second query parameter. Full note in [EP-005](docs/21_execution_plans/EP-005-landing-and-ingestion.md) §W4.
+      `growth.auth-registrations` has no consumer and grows unbounded; fine at first-experiment
+      volume, worth watching.
 
-      `gsid` will be absent until W2 sets the cookie; that is the contract's expected path, not a
-      defect. W5 (leads from registration) is unblocked now that W3 is flowing.
+- [ ] **S5 producers — W2, W5.** W2 (`growth-web` landing) is what will finally set the `gsid`
+      cookie and give the clicks a touchpoint to attribute to; until then every click carries
+      `correlationId` alone, which is the contract's expected path. W5 (leads from registration) is
+      unblocked — W3 has been flowing since 2026-07-21.
 
 - [ ] **Vault `GROWTH_GSID_HMAC_SECRET` is stored but unused.** Generated 2026-07-21 at
       `secret/prod/growth` (32 random bytes) so W2 and W4 are not blocked on it. Nothing reads it
@@ -71,6 +76,31 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-21 — W4: `bazos-service` records the click through to registration.**
+      `POST /ui/auth-redirect` (unauthenticated, always 204) forwards
+      `growth.auth_redirect.initiated.v1` to growth-core's ingest endpoint. Verified live both
+      ways: with a `gsid` cookie the event reached `growth.events` carrying `gsid` +
+      `gsidSource: cookie`; without one it arrived with `correlationId` alone — the contract's
+      expected path, not a defect.
+
+      **The join key is the `state` bazos already mints.** `createState()` produces a unique opaque
+      handle per attempt for CSRF and auth round-trips it untouched, so a second handle would
+      either fight that check or leave auth echoing a value growth never saw.
+
+      Emitted at the click with `keepalive`, before navigation and not awaited: a visitor who
+      registers and closes the tab has registered, and attribution must never add latency to
+      someone signing up. `gsid` is read server-side from the request cookie, never sent by the
+      page, so it stays off any URL, access log or `Referer` bound for auth.
+
+      ⚠️ **`bazos-service` had no working test runner.** A `jest.config.js` and an orphaned spec
+      existed but neither jest nor ts-jest was installed, so nothing in that service had ever been
+      run. Installed; the orphaned spec passes and the suite went 17 → 43.
+
+      ⚠️ **The client script lives inside a TypeScript template literal**, so nothing type checks
+      or executes it. A backtick in a comment ended the string and broke the build hundreds of
+      lines away. `ui-assets-attribution.spec.ts` now asserts the emission exists, precedes the
+      navigation, sends no `gsid`, and contains no backtick.
 
 - [x] **2026-07-21 — the `state` round trip is closed end to end.** The hosted auth page had
       `state` in scope for the token handoff but left it out of the register payload, so every
