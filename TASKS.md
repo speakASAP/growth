@@ -30,20 +30,16 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       back to `story` after a few days and see whether it still explains *why*, without your memory
       of the day filling the gaps. That is the whole feature — everything else is plumbing.
 
-- [ ] **NEXT — nothing joins the two halves.** Both now exist in production and neither knows
-      about the other: `auth.user.registered.v1` accumulates in `growth.auth-registrations`, and
-      `growth.auth_redirect.initiated.v1` reaches `growth.events` with no consumer bound at all —
-      so **clicks are currently discarded by the topic exchange**, unlike registrations. Bind a
-      durable queue before relying on any of them.
+- [ ] **No dead-letter queue on the attribution consumer.** A message that cannot be parsed is
+      dropped with its raw body logged; a message whose join fails is requeued and will retry
+      forever. Neither is wrong at this volume, but a real DLQ is the follow-up — the same gap
+      `auth-microservice` has on the producing side.
 
-      This is the remaining half of W1: consume both, match on `correlationId`, verify the `gsid`
-      signature (C-005 §4, secret already in Vault), resolve the `workspaceId` growth owns, and
-      build the `IdentityLink`. The contract requires the halves to join in **either arrival
-      order**, and a half with no partner (visitor abandoned registration) must be normal rather
-      than an error.
-
-      `growth.auth-registrations` has no consumer and grows unbounded; fine at first-experiment
-      volume, worth watching.
+- [ ] **`gsid_orphan` is not implemented.** C-005 §4 distinguishes a verified session growth-core
+      *knows* from one it does not, and only the former should link. Touchpoints — the thing that
+      makes a session known — arrive with W2. Until then the click record itself is taken as
+      evidence the session existed, which is documented in `AttributionService`. When W2 lands,
+      the orphan check belongs there.
 
 - [ ] **S5 producers — W2, W5.** W2 (`growth-web` landing) is what will finally set the `gsid`
       cookie and give the clicks a touchpoint to attribute to; until then every click carries
@@ -76,6 +72,40 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-22 — W1 consumer: the join works end to end in production.** `growth-core`
+      consumes both halves, declares and binds its own queues on boot, and matches on
+      `correlationId`. **Verified through the real services, not fixtures:** a click on
+      `bazos-service` carrying a signed `gsid` cookie, then a registration through
+      `auth-microservice` with the same `state`, produced one `attribution.identity_link` row with
+      the right session, correlation and workspace. Test data removed afterwards.
+
+      This closes the gap that had been widening since W4: `growth.events` had no consumer bound,
+      so **clicks were being discarded outright** by the topic exchange while registrations piled
+      up in a queue. The consumer now declares and binds both queues itself — a queue that exists
+      but is unbound looks healthy and receives nothing.
+
+      Design points worth not undoing:
+
+      - **The join key is the payload's `correlationId`, never the envelope's.** The envelope
+        carries a tracing id auth mints for *every* registration including direct signups; joining
+        on it would match registrations to clicks at random.
+      - **Only the verified session is stored, never the `gsid`.** It is a bearer token for an
+        anonymous session, and keeping it would make a database leak replayable as attribution.
+      - **A forgery costs the attribution, not the conversion** — the registration is still
+        recorded, and `gsid_forged` is logged as a warning.
+      - **Either arrival order, and a lone half is normal.** The two events travel different
+        queues from different services, so nothing orders them; both are stored on arrival and
+        each asks whether its partner is already there.
+      - The forged counter is a query over the facts, not a column, so it cannot drift from them.
+
+      ⚠️ Falsifying the `gsid_status = 'valid'` guard revealed it was **redundant with the
+      `session_id IS NOT NULL` check and therefore untested** — the forgery test had been passing
+      for the wrong reason. A hand-built row now pins it, so a change that stores a session before
+      verifying it turns the suite red rather than turning every forgery into attribution.
+
+      187 tests (was 152). Migration `005`, `GROWTH_GSID_HMAC_SECRET` wired into the ExternalSecret
+      from `secret/prod/growth` — shared with growth-web, which will mint the tokens this verifies.
 
 - [x] **2026-07-21 — W4: `bazos-service` records the click through to registration.**
       `POST /ui/auth-redirect` (unauthenticated, always 204) forwards

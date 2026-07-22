@@ -3,23 +3,35 @@
   "health": "ok",
   "deployed": true,
   "slice": "S5",
-  "gate": "S1a IMPL owner-confirmed correct, VERIFY (F-001 manual check) still pending; S5 W1 + W6 + W3 + W4 done and live. Both halves of the registration join now exist in production and NOTHING JOINS THEM — that is the next task. W2/W5 outstanding.",
+  "gate": "S1a IMPL owner-confirmed correct, VERIFY (F-001 manual check) still pending; S5 W1 (ingest + consumer) + W6 + W3 + W4 done and live. IdentityLink is built in production end to end. W2 (landing, touchpoints, gsid cookie) and W5 (leads) outstanding.",
   "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 planned at S5",
   "containers": {
-    "growth-core": { "source": "services/core", "port": 3376, "deployed": true, "ingress": false }
+    "growth-core": {
+      "source": "services/core",
+      "port": 3376,
+      "deployed": true,
+      "ingress": false
+    }
   },
   "database": {
     "name": "growth_core",
     "owner_role": "growth_core_owner",
     "runtime_role": "growth_core",
-    "note": "Roles split 2026-07-20. The runtime role holds DML grants only and owns nothing, so it cannot disable the decision_artefact append-only trigger. Migrations 001-003 applied in production."
+    "note": "Roles split 2026-07-20. The runtime role holds DML grants only and owns nothing, so it cannot disable the decision_artefact append-only trigger. Migrations 001-005 applied in production."
   },
   "broker": {
     "exchanges": {
-      "growth.events": "topic, durable, routing key = event type. Produced by growth-core's ingest drain, now carrying growth.auth_redirect.initiated.v1 from bazos-service (W4). NO CONSUMER BOUND — a topic exchange discards unmatched messages, so clicks are currently being dropped. Bind a durable queue before relying on them.",
-      "auth.events": "topic, durable. Produced by auth-microservice (W3). Queue growth.auth-registrations is bound to auth.user.registered.v1 and accumulating; growth-core does not consume it yet."
+      "growth.events": "topic, durable, routing key = event type. Produced by growth-core ingest drain, carrying growth.auth_redirect.initiated.v1 from bazos-service. Consumed by growth-core into queue growth.auth-redirects, which the consumer declares and binds itself on boot.",
+      "auth.events": "topic, durable. Produced by auth-microservice (W3). Consumed by growth-core into queue growth.auth-registrations."
     },
-    "note": "A topic exchange discards messages with no matching binding, so a consumer must declare its queue and binding BEFORE the producer it depends on goes live. growth.auth-registrations was declared ahead of W3's deploy for exactly this reason. It has no consumer and grows unbounded."
+    "note": "A topic exchange discards a message with no matching binding, so the consumer declares AND binds both queues on boot rather than relying on them existing. No dead-letter queue yet: unparseable messages are dropped with their body logged, failed joins are requeued indefinitely."
   },
-  "notes": "149 passing tests. Verified in production 2026-07-20: /health ok, POST /ingest/events returns 202 then 200 on replay, an event posted end to end arrived verbatim in a queue bound to growth.events and its buffer row reached status=published, and the runtime role was refused DISABLE TRIGGER and UPDATE. Drain runs every 5s; retention sweep at 03:00 Europe/Prague."
+  "notes": "187 passing tests. Verified in production 2026-07-22: a click on bazos-service with a signed gsid cookie plus a registration through auth-microservice with the same state produced one attribution.identity_link row. Test data removed. Drain runs every 5s; retention sweep at 03:00 Europe/Prague.",
+  "attribution": {
+    "schema": "attribution",
+    "tables": "auth_redirect, registration, identity_link",
+    "joinKey": "payload.correlationId - never the envelope's, which auth mints for every registration including direct signups",
+    "gsid": "verified with a constant-time HMAC check; only the proven sessionId is stored, never the token. Forged tokens cost the attribution, not the conversion.",
+    "notImplemented": "gsid_orphan - needs touchpoints from W2"
+  }
 }
