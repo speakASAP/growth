@@ -20,13 +20,13 @@ PORT="3376"
 # from the contract in docs/, so it needs both trees. See services/core/Dockerfile.
 IMAGES=(
   "growth-core|.|services/core/Dockerfile|"
-  # S5: "growth-web|.|services/web/Dockerfile|"
+  "growth-web|.|services/web/Dockerfile|"
 )
 
 # deployment[i] = "k8s-deployment|container|image-name"
 DEPLOYMENTS=(
   "growth-core|app|growth-core"
-  # S5: "growth-web|app|growth-web"
+  "growth-web|app|growth-web"
 )
 
 # No ingress.yaml — growth-core is ClusterIP-only, deliberately.
@@ -38,7 +38,7 @@ DEPLOYMENTS=(
 # When S5 adds growth-web, the ingress arrives with it and routes growth.alfares.cz/ to the
 # web container only — growth-core stays off the public routing table. Sharing a repository
 # does not put it on the internet; only a path in an ingress does that.
-MANIFESTS=(configmap.yaml external-secret.yaml deployment.yaml service.yaml)
+MANIFESTS=(configmap.yaml external-secret.yaml deployment.yaml service.yaml configmap-web.yaml deployment-web.yaml service-web.yaml ingress-web.yaml)
 
 # Optional hooks — uncomment and implement only what you actually need.
 

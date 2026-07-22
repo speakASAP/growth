@@ -1,0 +1,39 @@
+# The experiment landing, served under bazos.alfares.cz/l.
+#
+# A SEPARATE Ingress object rather than a path added to `bazos-service`'s. Traefik merges rules
+# across objects for the same host, so a distinct object gives growth its own route without two
+# repositories owning one manifest — the kind of shared file the parallel-work standard exists to
+# keep out of a deploy.
+#
+# It has to be this host. The gsid cookie is scoped Domain=bazos.alfares.cz so that
+# `bazos-service` can read it server-side when the visitor clicks through to registration
+# (F-005 Q1). Serving the landing anywhere else leaves attribution permanently empty while every
+# check reports healthy — see D-005 for the last time that assumption cost a rewrite.
+#
+# `/l` is more specific than `/`, so Traefik routes it here and everything else stays with
+# bazos-service untouched.
+#
+# No `tls` block: the certificate for this host is already issued and owned by the bazos-service
+# ingress. Requesting a second one for the same host would have two objects competing for the
+# same cert-manager secret.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: growth-web
+  namespace: statex-apps
+  labels:
+    app: growth-web
+    managed-by: k8s-migration
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: bazos.alfares.cz
+      http:
+        paths:
+          - path: /l
+            pathType: Prefix
+            backend:
+              service:
+                name: growth-web
+                port:
+                  number: 3377

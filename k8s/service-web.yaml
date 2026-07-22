@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: growth-web
+  namespace: statex-apps
+  labels:
+    app: growth-web
+spec:
+  type: ClusterIP
+  selector:
+    app: growth-web
+  ports:
+    - name: http
+      port: 3377
+      targetPort: 3377

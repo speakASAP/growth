@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: growth-web-config
+  namespace: statex-apps
+  labels:
+    app: growth-web
+    managed-by: k8s-migration
+data:
+  NODE_ENV: "production"
+  SERVICE_NAME: "growth-web"
+  PORT: "3377"
+  # Served under bazos.alfares.cz by an ingress PATH, not on its own host. The gsid cookie is
+  # scoped Domain=bazos.alfares.cz so bazos-service can read it when the visitor clicks through
+  # to registration (F-005 Q1). A separate host would leave attribution permanently empty while
+  # everything reported healthy — see D-005 for the last time that happened.
+  DOMAIN: "bazos.alfares.cz"
+  GROWTH_CORE_URL: "http://growth-core.statex-apps.svc.cluster.local:3376"
+  GROWTH_WORKSPACE_ID: "bazos"
+  GROWTH_EXPERIMENT_ID: "exp-001"
+  GROWTH_EXPERIMENT_VERSION: "v1"

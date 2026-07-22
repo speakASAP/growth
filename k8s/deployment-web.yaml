@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: growth-web
+  namespace: statex-apps
+  labels:
+    app: growth-web
+    managed-by: k8s-migration
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: growth-web
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: growth-web
+    spec:
+      containers:
+        - name: app
+          image: localhost:5000/growth-web:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3377
+              name: http
+          envFrom:
+            - configMapRef:
+                name: growth-web-config
+            # GROWTH_GSID_HMAC_SECRET — the landing mints the tokens growth-core verifies.
+            # One secret, two sides of the same signature.
+            - secretRef:
+                name: growth-core-secret
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3377
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3377
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "96Mi"
+              cpu: "25m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
