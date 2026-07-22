@@ -3,14 +3,20 @@
   "health": "ok",
   "deployed": true,
   "slice": "S5",
-  "gate": "S1a IMPL owner-confirmed correct, VERIFY (F-001 manual check) still pending; S5 W1 (ingest + consumer) + W6 + W3 + W4 done and live. IdentityLink is built in production end to end. W2 (landing, touchpoints, gsid cookie) and W5 (leads) outstanding.",
-  "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 planned at S5",
+  "gate": "S1a IMPL owner-confirmed correct, VERIFY (F-001 manual check) still pending; S5 W1 + W6 + W3 + W4 + W2 done and live. Only W5 (leads from registration) remains in the slice.",
+  "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 (bazos.alfares.cz/l)",
   "containers": {
     "growth-core": {
       "source": "services/core",
       "port": 3376,
       "deployed": true,
       "ingress": false
+    },
+    "growth-web": {
+      "source": "services/web",
+      "port": 3377,
+      "deployed": true,
+      "ingress": "bazos.alfares.cz/l \u2014 a separate Ingress object for that host, NOT growth.alfares.cz. The gsid cookie is scoped Domain=bazos.alfares.cz so bazos-service can read it; another host leaves attribution permanently empty while reporting healthy (D-005)."
     }
   },
   "database": {
@@ -26,12 +32,12 @@
     },
     "note": "A topic exchange discards a message with no matching binding, so the consumer declares AND binds both queues on boot rather than relying on them existing. No dead-letter queue yet: unparseable messages are dropped with their body logged, failed joins are requeued indefinitely."
   },
-  "notes": "187 passing tests. Verified in production 2026-07-22: a click on bazos-service with a signed gsid cookie plus a registration through auth-microservice with the same state produced one attribution.identity_link row. Test data removed. Drain runs every 5s; retention sweep at 03:00 Europe/Prague.",
+  "notes": "growth-core 187 tests, growth-web 33. Verified in production 2026-07-22: the landing sets a scoped HttpOnly gsid cookie on consent and records nothing on refusal; a click plus a registration produce one attribution.identity_link row. Test data removed. Consent records currently live only in the visitor browser - see TASKS.md.",
   "attribution": {
     "schema": "attribution",
     "tables": "auth_redirect, registration, identity_link",
     "joinKey": "payload.correlationId - never the envelope's, which auth mints for every registration including direct signups",
     "gsid": "verified with a constant-time HMAC check; only the proven sessionId is stored, never the token. Forged tokens cost the attribution, not the conversion.",
-    "notImplemented": "gsid_orphan - needs touchpoints from W2"
+    "notImplemented": "gsid_orphan - W2 now produces touchpoints, so this is implementable; see TASKS.md"
   }
 }

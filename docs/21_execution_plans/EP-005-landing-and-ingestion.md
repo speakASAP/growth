@@ -42,7 +42,23 @@ Five bounded workstreams. No two touch the same file.
 | **Depends on** | C-005 §1, §3, §5, §6 |
 | **Evidence** | Idempotency test, ack-ordering test, failure-injection test, retention job test |
 
-### W2 — `growth-web` landing runtime
+### W2 — `growth-web` landing runtime ✅ **done 2026-07-22**
+
+> Served at **`bazos.alfares.cz/l/:landingVersionId`** — that host, not one of its own. The `gsid`
+> cookie must be readable by `bazos-service` at click time, so it is scoped
+> `Domain=bazos.alfares.cz`. The repo docs had assumed `growth.alfares.cz`, which would have left
+> attribution permanently empty while every check reported healthy — D-005 repeating itself,
+> caught before it was built (owner decision, 2026-07-22).
+>
+> The route is a **separate Ingress object** for the same host, so `bazos-service`'s manifest stays
+> owned by one repository. Verified in production: a refusal leaves no cookie and records nothing;
+> a grant sets the cookie and the touchpoint reaches growth-core's buffer intact.
+>
+> ⚠️ The consent record referenced by `consentEvidence.consentRecordId` currently lives **only in
+> the visitor's browser**. It gates collection correctly; it is not yet evidence anyone could
+> produce in a dispute. See TASKS.md.
+
+### W2 — original scope
 
 | | |
 |---|---|
@@ -176,8 +192,8 @@ Contracts first, then producers, then consumers, then read models — the standa
 1. W3  auth.user.registered.v1          ✅ done 2026-07-21, live on auth.events
 2. W1  growth-core ingestion + buffer   ✅ done 2026-07-20, drains to growth.events (W6)
 3. W4  bazos gsid pass-through          ✅ done 2026-07-21, live on growth.events
-4. W2  growth-web landing               ← needs W1 endpoint deployed
-5. W5  leads from registration          ← W3 is flowing, so this is unblocked
+4. W2  growth-web landing               ✅ done 2026-07-22, bazos.alfares.cz/l
+5. W5  leads from registration          ← LAST ONE. W3 is flowing, so this is unblocked
 ```
 
 **Both halves of the join now exist in production and nothing joins them.** That is the next piece

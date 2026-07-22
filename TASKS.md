@@ -41,10 +41,25 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       evidence the session existed, which is documented in `AttributionService`. When W2 lands,
       the orphan check belongs there.
 
-- [ ] **S5 producers — W2, W5.** W2 (`growth-web` landing) is what will finally set the `gsid`
-      cookie and give the clicks a touchpoint to attribute to; until then every click carries
-      `correlationId` alone, which is the contract's expected path. W5 (leads from registration) is
-      unblocked — W3 has been flowing since 2026-07-21.
+- [ ] **W5 — leads from registration** (`leads-microservice` consumes `auth.user.registered.v1`,
+      creates a `Lead`, emits `growth.lead.created_from_registration.v1`). The last producer in
+      EP-005, and unblocked since W3 started flowing.
+
+- [ ] **`gsid_orphan` — now implementable.** W2 produces touchpoints, so growth-core can finally
+      tell a verified session it *knows* from one it does not (C-005 §4). Until this lands, the
+      click record is still taken as evidence the session existed — documented in
+      `AttributionService`.
+
+- [ ] **The landing has no real content or variants yet.** `services/web` serves one page at
+      `/l/:landingVersionId` with the legal footer and the consent gate; the copy is a placeholder
+      and there is only one variant. Variant routing is the id in the URL, so adding one is a new
+      page and a new id — no code change — but the first experiment needs copy worth testing.
+
+- [ ] **Consent records live only in the visitor's browser.** `consentEvidence.consentRecordId` is
+      minted client-side and referenced in every touchpoint, but nothing resolves it: C-005 §2.1
+      calls it a *reference*, and there is no store behind it. Good enough to gate collection,
+      **not** good enough as evidence in a dispute. A server-side consent record is the follow-up,
+      and it belongs with the Czech consent baseline review (M0 #12).
 
 - [ ] **Vault `GROWTH_GSID_HMAC_SECRET` is stored but unused.** Generated 2026-07-21 at
       `secret/prod/growth` (32 random bytes) so W2 and W4 are not blocked on it. Nothing reads it
@@ -72,6 +87,41 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-22 — W2: the experiment landing.** `growth-web` (`services/web`, port 3377) serves
+      the landing at **`bazos.alfares.cz/l/:landingVersionId`** — that host, not one of its own.
+      Verified in production: refusal → 204 with no `Set-Cookie` and nothing recorded; grant → 204
+      with a `Domain=bazos.alfares.cz; Secure; SameSite=Lax; HttpOnly; Max-Age=7776000` cookie, and
+      the touchpoint reached growth-core's buffer and was published with its `gclid`, `utm` and
+      `consentEvidence` intact. `bazos.alfares.cz/` kept answering 200 throughout.
+
+      **The host is the whole point.** The cookie must be readable by `bazos-service` when the
+      visitor clicks through to registration, so it is scoped `Domain=bazos.alfares.cz`. Serving
+      the landing on `growth.alfares.cz` — which the repo docs had assumed — would have left
+      attribution permanently empty while every check reported healthy. That is D-005 repeating
+      itself, caught before it was built (owner decision, 2026-07-22).
+
+      The route is a **separate Ingress object** for the same host rather than a path added to
+      `bazos-service`'s manifest, so two repositories never own one file. Traefik merges rules and
+      `/l` is more specific than `/`. No `tls` block — the certificate is owned by the bazos
+      ingress, and a second claim on it would have two objects fighting over one secret.
+
+      Consent gates the **recording, not the content**: the page works fully after a refusal. The
+      session is minted server-side only once a grant arrives, so a refusal leaves no cookie *and*
+      no touchpoint — data collected without permission cannot be un-collected. Absent, malformed
+      and necessary-only decisions are all refusals; necessary-only deliberately so, since
+      counting it would let the strictly-necessary exemption launder a purpose the visitor declined.
+
+      ⚠️ **The first deploy hung every consent request until the edge returned 524.** A bare
+      `@Res()` makes the handler responsible for ending the response, and this one sets a header
+      and returns. All 27 unit tests passed — they call the controller directly with a fake
+      response and never touch the HTTP layer. `landing.e2e.spec.ts` now drives the real stack.
+
+      ⚠️ **A spec named `*.e2e-spec.ts` is collected by nothing** — the jest `testRegex` wants a dot
+      before `spec`, so it ran zero tests and reported success. Renamed to `*.e2e.spec.ts`.
+
+      33 tests, including the delivery-plan §8 producer conformance check, which validates against
+      the contract schema read from `docs/` rather than a copy.
 
 - [x] **2026-07-22 — W1 consumer: the join works end to end in production.** `growth-core`
       consumes both halves, declares and binds its own queues on boot, and matches on
