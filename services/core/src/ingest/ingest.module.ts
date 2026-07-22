@@ -30,6 +30,9 @@ import { RetentionScheduler } from './retention.scheduler';
     DrainScheduler,
     RetentionScheduler,
   ],
-  exports: [IngestRepository],
+  // IngestService is exported for SpendModule: growth-core produces the manual spend event, and
+  // publishing it through the buffer reuses the durability that already exists rather than
+  // opening a second, worse path to the broker.
+  exports: [IngestRepository, IngestService],
 })
 export class IngestModule {}

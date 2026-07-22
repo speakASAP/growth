@@ -49,8 +49,18 @@ ingress does that. See `auth-microservice/k8s/ingress.yaml` for the path-routing
 ```
 POST /governance/decisions          201 created · 200 duplicate · 409 conflict · 422 invalid
 GET  /governance/decisions?experimentId=<id>[&experimentVersion=<v>]
+POST /spend/observations            201 created · 200 duplicate · 400 invalid · 409 conflict
+GET  /spend/observations/:experimentId
+GET  /experiments/:experimentId/report     the derived cost metrics (C-006 §6)
+GET  /experiments/:experimentId            the owner's screen, server-rendered HTML
+POST /experiments/:experimentId/spend      that screen's form target, 303 back to the screen
 GET  /health
 ```
+
+**None of these may be added to an ingress.** The experiment screen shows spend and lead counts,
+and `growth-web` — the only publicly routed container here — has no authentication at all. The
+owner reaches the screen with `kubectl -n statex-apps port-forward deploy/growth-core 3376:3376`.
+Publishing it needs an authenticated surface (S1b) and is an owner decision (C-006 §6.8).
 
 ## Commands
 

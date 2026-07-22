@@ -66,10 +66,12 @@
       ],
       "properties": {
         "observationId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "experimentId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "platform": {
           "const": "google_ads"
@@ -103,10 +105,12 @@
         },
         "evidenceReference": {
           "type": "string",
-          "description": "provider report / export identifier"
+          "minLength": 1,
+          "description": "provider report / export identifier. minLength added 2026-07-22 (S6): without it a blank string validated, and a blank evidence reference means a hand-typed spend figure with no provenance at all - which is the one thing this field exists to prevent. The repository rule is that blank free text is rejected, not defaulted."
         },
         "enteredBy": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "enteredAt": {
           "type": "string",

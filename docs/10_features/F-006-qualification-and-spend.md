@@ -64,14 +64,42 @@ Rules carried from architecture §4.5.1:
 
 **Owner decision 2026-07-19:** qualification happens in the **custom CRM in the client panel**, where the owner already changes statuses by hand wherever automation does not cover them. No separate qualification UI is built.
 
-This shrinks the slice again. `leads-microservice` already carries lead status:
+> ⚠️ **Corrected 2026-07-22 — this section described an endpoint that does not exist.** The
+> original text read:
+>
+> > `leads-microservice` already carries lead status:
+> > `leads-microservice/src/leads/leads.controller.ts   PATCH /leads/:id  → status`
+> > So the work is **not** "build qualification" — it is "make the existing status change emit a
+> > versioned, immutable qualification event".
+>
+> There is **no `PATCH /leads/:id`** and no status-change endpoint of any kind. Verified against
+> the source: the routes on `LeadsController` are `POST /leads/submit`, `GET /leads/confirm/:token`,
+> `GET /leads/:id`, `GET /leads`, and a set of `internal/*` routes behind `InternalServiceGuard`.
+> `Lead.status` is written in exactly two places inside `leads.service.ts` — `'new'` at creation and
+> `'confirmed'` on token confirmation — and never by an operator.
+>
+> Had this been implemented as written, the slice would have hung a qualification event off a
+> status transition that nothing can trigger, and the event would have been correct, tested, and
+> never emitted. The plan is corrected below rather than around: qualification is a **new**
+> surface, because there was never an existing one to decorate.
+
+### Where the CRM actually is — F-006 open question resolved 2026-07-22
+
+The "custom CRM in the client panel" is `leads-microservice`'s own admin panel, and it already
+exists:
 
 ```
-leads-microservice/src/leads/leads.controller.ts   PATCH /leads/:id  → status
-leads-microservice/src/leads/integrations/lifecycle-event-router.service.ts
+leads-microservice/public/admin.html + admin.js     lead list and detail view
+leads-microservice/src/leads/admin-leads.controller.ts   GET /api/admin/leads[/:id|/summary]
+leads-microservice/src/auth/admin-auth.guard.ts     bearer token validated against auth-microservice
 ```
 
-So the work is **not** "build qualification" — it is "make the existing status change emit a versioned, immutable qualification event, and show the two axes in the CRM."
+It is authenticated, role-gated and workspace-scoped, and `GET /api/admin/leads` already returns
+`id` per lead — so a lead can be marked from it without any new identity plumbing. `bazos-service`
+does **not** join the required owners: its `/admin` and `/client` panels are a different surface,
+and routing lead qualification through them would put lead data in a second place.
+
+So the work is: **add a qualification write path to the CRM that already reads the leads.**
 
 The owner works a registered lead, then records a judgement. Criteria are `v1-owner-manual` ([D19](../06_architecture/ARCHITECTURE.md)):
 
@@ -93,6 +121,25 @@ type EngagementStatus    = "new" | "contacted" | "replied" | "unresponsive";
 A status correction emits a **new event**. History is never mutated.
 
 ### 3. Experiment view
+
+> ✅ **BUILT IN S6b (2026-07-22)** and verified against production. Contract:
+> [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) §6.
+>
+> - Read API — `GET /experiments/:experimentId/report` on `growth-core`
+> - Screen — `GET /experiments/:experimentId` on `growth-core`, server-rendered, with a spend
+>   entry form posting to `POST /experiments/:experimentId/spend`
+> - Both cost metrics, the attributed/unattributed split, and a derived `pending`
+>
+> ⚠️ **Where it lives, and why.** The screen is on `growth-core`, which has **no ingress**. It is
+> deliberately **not** on `growth-web`: that container is public on `bazos.alfares.cz/l` and has no
+> authentication of any kind, so an owner-only screen showing spend and lead counts cannot go
+> there. The owner reaches it with `kubectl port-forward` (§"Where the owner goes" below).
+> Publishing it on a public hostname needs an authenticated surface (S1b) and is an **owner
+> decision** — C-006 §6.8.
+>
+> ⚠️ **Scope caveat, unresolved.** `qualification.lead` has no `experiment_id`, so the report counts
+> every lead in the *workspace* against the spend of the *named experiment*. Correct while one
+> experiment runs per workspace; wrong the moment a second does — C-006 §6.6.
 
 ```
 Experiment · Bazos · CZ · 2026-07-19
@@ -124,14 +171,15 @@ Consequence to watch: a backlog of `pending` makes cost-per-qualified look worse
 
 ## Open questions — resolve before CONTRACT
 
-1. ✅ ~~Where does the owner qualify leads?~~ — **custom CRM in the client panel**, existing surface, manual status change
+1. ✅ ~~Where does the owner qualify leads?~~ — the **`leads-microservice` admin panel**, the existing authenticated CRM. Corrected 2026-07-22: it is a **new write path**, not an existing status change (see above)
 2. ✅ ~~Is `pending` terminal / does it count?~~ — **counts against cost per qualified lead**
-3. **Spend granularity** — per day, or per campaign per day? Per-campaign is needed once more than one campaign runs per experiment; per-day is enough for the first run
-4. **Who may qualify?** Owner only at v1, or any authenticated operator? Affects whether `decidedById` needs an identity beyond "the owner"
+3. ⚠️ **Spend granularity — still open, and now explicitly deferred.** `growth.spend.observed_manual.v1` carries `experimentId` but **no `campaignId`**, so S6 records per-experiment-per-period only. This is enough for the first run (one campaign per experiment) and wrong the moment a second campaign runs. Adding `campaignId` is a **v2 schema**, not a quiet field addition — flagged for the owner, not decided by the implementer
+4. ✅ ~~Who may qualify?~~ — resolved 2026-07-22: **any principal `AdminAuthGuard` accepts**, and the event records *which* one in `decidedById` (the real auth user id, never the string `"owner"`). See [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) §1.3
 
 ### Still to confirm
 
-Which frontend hosts the CRM. `bazos-service` serves `/admin` and `/client` (`ui.controller.ts`), and `leads-microservice` holds the lead data — so the CRM either reads leads over the API from the Bazos admin panel, or lives elsewhere. This decides whether `bazos-service` joins the required owners.
+✅ Resolved 2026-07-22 — the CRM is the `leads-microservice` admin panel (`public/admin.html`),
+not a `bazos-service` panel. `bazos-service` does **not** join the required owners.
 
 ---
 
@@ -156,6 +204,16 @@ Which frontend hosts the CRM. `bazos-service` serves `/admin` and `/client` (`ui
 3. Confirm cost per registration and cost per qualified lead
 4. Confirm the attributed/unattributed split is visible
 5. Correct one qualification; confirm history shows both decisions
+
+### Where the owner goes
+
+```bash
+kubectl -n statex-apps port-forward deploy/growth-core 3376:3376
+# then open http://localhost:3376/experiments/exp-001
+```
+
+The page shows the campaign parameters and the three numbers, and the form at the bottom records
+spend. There is no public URL, by design (C-006 §6.7).
 
 ---
 

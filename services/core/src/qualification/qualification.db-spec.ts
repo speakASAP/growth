@@ -1,0 +1,226 @@
+import { Client } from 'pg';
+import { DatabaseService } from '../db/database.service';
+import { QualificationRepository } from './qualification.repository';
+
+/**
+ * Requires the throwaway Postgres from scripts/test-db.sh.
+ *
+ * The behaviour worth proving against a real database rather than a mock: a judgement survives
+ * arriving before its lead, `pending` is genuinely derived, the current verdict is the latest one
+ * deterministically, and the runtime role cannot rewrite a judgement even though it wrote it.
+ */
+const DATABASE_URL =
+  process.env.DATABASE_URL ?? 'postgresql://testuser:testpw@127.0.0.1:55432/growth_core_test';
+const RUNTIME_DATABASE_URL =
+  process.env.TEST_RUNTIME_DATABASE_URL ??
+  'postgresql://growth_core:testpw@127.0.0.1:55432/growth_core_test';
+
+let client: Client;
+let runtime: Client;
+let repository: QualificationRepository;
+
+beforeAll(async () => {
+  client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  runtime = new Client({ connectionString: RUNTIME_DATABASE_URL });
+  await runtime.connect();
+
+  repository = new QualificationRepository({
+    query: (text: string, params?: unknown[]) => client.query(text, params as never),
+  } as unknown as DatabaseService);
+});
+
+afterAll(async () => {
+  await client.end();
+  await runtime.end();
+});
+
+beforeEach(async () => {
+  await client.query('TRUNCATE qualification.lead_qualification, qualification.lead');
+  await client.query('TRUNCATE attribution.identity_link, attribution.registration, attribution.auth_redirect');
+});
+
+const lead = (leadId: string, correlationId: string | null = null, userId = `user-${leadId}`) => ({
+  leadId,
+  userId,
+  correlationId,
+  workspaceId: 'bazos',
+  sourceService: 'auth-microservice',
+  createdAt: '2026-07-22T10:00:00.000Z',
+});
+
+const judgement = (
+  qualificationId: string,
+  leadId: string,
+  status: 'qualified' | 'disqualified',
+  decidedAt: string,
+) => ({
+  qualificationId,
+  leadId,
+  workspaceId: 'bazos',
+  criteriaVersion: 'v1-owner-manual',
+  qualificationStatus: status,
+  decidedByType: 'human',
+  decidedById: 'admin-7',
+  decidedAt,
+  reason: `because ${qualificationId}`,
+  supersedesQualificationId: null,
+});
+
+describe('storing leads and judgements', () => {
+  it('is idempotent on redelivery of the same lead', async () => {
+    await repository.saveLead(lead('lead-1'));
+    await repository.saveLead(lead('lead-1'));
+
+    const { rows } = await client.query('SELECT count(*)::int AS n FROM qualification.lead');
+    expect(rows[0].n).toBe(1);
+  });
+
+  it('is idempotent on redelivery of the same judgement', async () => {
+    await repository.saveLead(lead('lead-1'));
+    expect(await repository.saveQualification(judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'))).toBe(1);
+    // A second delivery inserts nothing, and says so — the caller uses that to avoid logging twice.
+    expect(await repository.saveQualification(judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'))).toBe(0);
+  });
+
+  // C-006 §3.1 — the reason there is no foreign key. A judgement is the scarcer fact.
+  it('stores a judgement whose lead has not arrived yet', async () => {
+    await expect(
+      repository.saveQualification(judgement('q-1', 'lead-not-here-yet', 'qualified', '2026-07-22T11:00:00Z')),
+    ).resolves.toBe(1);
+  });
+
+  it('refuses a blank reason at the database, not only in the application', async () => {
+    await repository.saveLead(lead('lead-1'));
+
+    await expect(
+      repository.saveQualification({
+        ...judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'),
+        reason: '   ',
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('refuses a status outside the contract', async () => {
+    await repository.saveLead(lead('lead-1'));
+
+    await expect(
+      repository.saveQualification({
+        ...judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'),
+        qualificationStatus: 'pending' as never,
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe('the current verdict', () => {
+  it('reports a lead with no judgement as pending', async () => {
+    await repository.saveLead(lead('lead-1'));
+
+    const verdicts = await repository.currentVerdicts('bazos');
+    expect(verdicts).toEqual([{ leadId: 'lead-1', verdict: 'pending', attributed: false }]);
+  });
+
+  it('reports the latest judgement, not the first', async () => {
+    await repository.saveLead(lead('lead-1'));
+    await repository.saveQualification(judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'));
+    await repository.saveQualification(judgement('q-2', 'lead-1', 'disqualified', '2026-07-22T12:00:00Z'));
+
+    const verdicts = await repository.currentVerdicts('bazos');
+    expect(verdicts[0].verdict).toBe('disqualified');
+  });
+
+  // Both judgements stay. A history that kept only the current verdict would lose "we changed our
+  // mind, and when", which is the entire point of the correction path.
+  it('keeps the superseded judgement queryable', async () => {
+    await repository.saveLead(lead('lead-1'));
+    await repository.saveQualification(judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'));
+    await repository.saveQualification({
+      ...judgement('q-2', 'lead-1', 'disqualified', '2026-07-22T12:00:00Z'),
+      supersedesQualificationId: 'q-1',
+    });
+
+    const history = await repository.history('lead-1');
+    expect(history.map((row) => row.qualificationId)).toEqual(['q-2', 'q-1']);
+    expect(history[0].supersedesQualificationId).toBe('q-1');
+  });
+
+  it('scopes verdicts to the workspace', async () => {
+    await repository.saveLead(lead('lead-1'));
+    await repository.saveLead({ ...lead('lead-2'), workspaceId: 'other' });
+
+    const verdicts = await repository.currentVerdicts('bazos');
+    expect(verdicts.map((row) => row.leadId)).toEqual(['lead-1']);
+  });
+
+  // The attributed/unattributed split (F-006). Without it a cost-per-registration reading looks
+  // worse than reality and invites a wrong kill decision.
+  it('marks a lead attributed only when an identity link exists', async () => {
+    await repository.saveLead(lead('lead-linked', 'corr-1', 'user-A'));
+    await repository.saveLead(lead('lead-unlinked', null, 'user-B'));
+    await client.query(
+      `INSERT INTO attribution.identity_link (user_id, session_id, correlation_id, workspace_id)
+       VALUES ('user-A', 'sess-1', 'corr-1', 'bazos')`,
+    );
+
+    const verdicts = await repository.currentVerdicts('bazos');
+    const byLead = Object.fromEntries(verdicts.map((row) => [row.leadId, row.attributed]));
+    expect(byLead['lead-linked']).toBe(true);
+    expect(byLead['lead-unlinked']).toBe(false);
+  });
+});
+
+describe('the runtime role cannot rewrite a judgement', () => {
+  /** Always rolled back, so a regression cannot let the spec destroy what it is checking. */
+  const refused = async (sql: string): Promise<Error> => {
+    await runtime.query('BEGIN');
+    try {
+      await runtime.query(sql);
+      throw new Error(`expected "${sql.slice(0, 60)}…" to be refused, but it succeeded`);
+    } catch (err) {
+      return err as Error;
+    } finally {
+      await runtime.query('ROLLBACK');
+    }
+  };
+
+  beforeEach(async () => {
+    await repository.saveLead(lead('lead-1'));
+    await repository.saveQualification(judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'));
+  });
+
+  it('holds no UPDATE grant on lead_qualification', async () => {
+    const err = await refused(
+      `UPDATE qualification.lead_qualification SET qualification_status = 'disqualified'`,
+    );
+    expect(err.message).toMatch(/permission denied/i);
+  });
+
+  it('holds no DELETE grant on lead_qualification', async () => {
+    const err = await refused('DELETE FROM qualification.lead_qualification');
+    expect(err.message).toMatch(/permission denied/i);
+  });
+
+  // It must still be able to do its actual job.
+  it('can read and insert', async () => {
+    await expect(
+      runtime.query('SELECT count(*) FROM qualification.lead_qualification'),
+    ).resolves.toBeDefined();
+    await expect(
+      runtime.query(
+        `INSERT INTO qualification.lead_qualification
+           (qualification_id, lead_id, workspace_id, criteria_version, qualification_status,
+            decided_by_type, decided_by_id, decided_at, reason)
+         VALUES ('q-runtime','lead-1','bazos','v1-owner-manual','qualified','human','admin-7',now(),'ok')`,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  // A lead's facts come from an event that may legitimately be corrected upstream, so this one
+  // does hold UPDATE — asserted so the difference stays deliberate rather than accidental.
+  it('can update a lead, which is deliberately not append-only', async () => {
+    await expect(
+      runtime.query(`UPDATE qualification.lead SET source_service = 'x' WHERE lead_id = 'lead-1'`),
+    ).resolves.toBeDefined();
+  });
+});

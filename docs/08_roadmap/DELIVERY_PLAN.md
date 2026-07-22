@@ -76,7 +76,8 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 | **S1a** | **Decision record** — `DecisionArtefact` + canonical hash | growth-core (`services/core/`) | M1 | 🔨 **IMPL подтверждён владельцем как корректный (2026-07-21)**, развёрнут в проде. Остаётся только ручная проверка F-001 (`./scripts/s1a-verify.sh`) — гейт VERIFY не закрыт · [F-001](../10_features/F-001-decision-record-and-governance.md) · [C-001](../23_documentation_contracts/C-001-decision-record.md) · [D-004](../07_decisions/D-004-decision-artefact-shape-and-hash.md) |
 | **S1b** | Execution governance — `ApprovalGrant` + `approvedParametersHash`, `ExecutionAttempt` + `effectKey`, budget ceilings, fix in-memory idempotency | goalkeeper · growth-core | **M3** — не нужен до первой записи в API | ◷ |
 | **S5** | Landing runtime, durable edge→core ingestion, consent evidence, UTM + click-ID, `AnonymousTouchpoint`, `IdentityLink` | growth-web · growth-core · **auth** · bazos · leads | M1 | 🔨 **W1 (приём + консьюмер), W6, W3, W4 готовы — `IdentityLink` строится в проде.** Клик на bazos с подписанной `gsid` плюс регистрация через auth дают одну связку; проверено сквозь реальные сервисы 2026-07-22. Осталось: **W2** (лендинг, `AnonymousTouchpoint`, установка cookie — без него `gsid` всегда отсутствует) и **W5** (лиды) · [EP-005](../21_execution_plans/EP-005-landing-and-ingestion.md) |
-| **S6** | Qualification — `LeadQualificationEvent`, `criteriaVersion: v1-owner-manual`, manual marking surface, `ManualSpendObservation` | leads · growth-core | M1 | ◷ |
+| **S6** | Qualification — `LeadQualificationEvent`, `criteriaVersion: v1-owner-manual`, manual marking surface, `ManualSpendObservation` | leads · growth-core | M1 | ✅ **Развёрнуто и проверено в проде 2026-07-22.** Миграция 006 применена, миграция Prisma в leads применена. Проверено на реальных сервисах: лид доходит до `qualification.lead` из очереди `growth.lead-created` по всей цепочке от лендинга; вердикт из админ-панели `leads` доходит до `qualification.lead_qualification`; исправление **добавляет** строку, а `UPDATE`/`DELETE` под runtime-ролью отклоняются (`permission denied`); `POST /spend/observations` сохраняет наблюдение и публикует его в `growth.events` · [F-006](../10_features/F-006-qualification-and-spend.md) · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) |
+| **S6b** | Витрина эксперимента — read-API и экран владельца | growth-core | M1 | ✅ **Развёрнуто и проверено в проде 2026-07-22.** `GET /experiments/:id/report` и экран `GET /experiments/:id` с формой ввода расходов. Стоимость регистрации, стоимость квалифицированного лида, разбивка attributed/unattributed, производный `pending`. Деньги — десятичные строки (BigInt, scale 4), деление округляется half-up до 2 знаков, деление на ноль даёт `—`, а не 0/NaN. Только на growth-core, **без ingress** · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) §6 |
 | **S7** | **Universal revenue adapter** — canonical `revenue.recognised`, flipflop as first client (§6) | orders · payments · growth-core · flipflop | M2 | ◷ |
 | **S8** | Google Ads connector — read-only metrics, `SpendObservation` + reconciliation | growth-core | M2 | ◷ |
 | **S9** | Google Ads connector — approved writes, execution reconciliation, connector failure states | growth-core · goalkeeper | M3 | ◷ |
@@ -108,6 +109,36 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 `requestMagicLink` создаёт запись по любому введённому адресу. Событие эмитится только по
 подтверждённой личности, поэтому измеренные регистрации будут **ниже** числа строк в `users` —
 в отчёте MS-002 указывать обе величины.
+
+### Найдено при реализации S6 — влияет на другие срезы
+
+**Документ описывал эндпоинт, которого нет.** F-006 утверждал, что в `leads.controller.ts` есть
+`PATCH /leads/:id → status` и что S6 сводится к тому, чтобы существующая смена статуса начала
+эмитить событие. Такого маршрута нет, и `Lead.status` пишется ровно в двух местах внутри сервиса —
+оператором никогда. Реализованный буквально, срез повесил бы корректное, покрытое тестами событие
+на переход, который нечем вызвать, и оно не эмитилось бы никогда, при этом выглядя рабочим.
+Исправлено в источнике; исходная формулировка процитирована, а не удалена.
+
+**Схема контракта принимала пустой `evidenceReference`.** У поля не было `minLength`, то есть
+`""` проходил валидацию — а это вся провенанс-цепочка вручную введённой суммы расходов. Правило
+репозитория: пустой свободный текст отклоняется, а не подставляется по умолчанию. Исправлено
+(`minLength: 1` также на `observationId`, `experimentId`, `enteredBy`).
+
+**Оба дефекта происходили из документов, а не из кода** — та же закономерность, что и в D-005.
+Тест, написанный против контракта до внимательного чтения схемы, поймал второй из них.
+
+**Витрина эксперимента построена в S6b (2026-07-22).** Заявленный результат F-006 §3 достигнут:
+read-API `GET /experiments/:id/report` и серверный экран `GET /experiments/:id` показывают обе
+метрики стоимости и разбивку attributed/unattributed.
+
+Два ограничения зафиксированы, а не скрыты:
+
+- **Экран живёт только на growth-core, у которого нет ingress.** Владелец открывает его через
+  `kubectl -n statex-apps port-forward deploy/growth-core 3376:3376`. На `growth-web` его класть
+  нельзя: тот публичен на `bazos.alfares.cz/l` и не имеет никакой аутентификации. Публикация на
+  публичном хосте требует аутентифицированной поверхности (S1b) — **решение владельца**, C-006 §6.8.
+- **Отчёт считает лиды по workspace, а не по эксперименту**: у `qualification.lead` нет
+  `experiment_id`. Верно, пока на workspace идёт один эксперимент; неверно со второго — C-006 §6.6.
 
 ### Why S2–S4 are a parallel track, not a gate
 
@@ -149,10 +180,10 @@ Parallel work runs freely **between** milestones. At each milestone all active w
 | Reply → `leadId` | 🔨 S4 | 🔨 S4 | ◷ | — | — | — | — | — | — |
 | Persisted approvals + grants | — | — | — | 🔨 S1 | — | 🔨 S1 | — | — | — |
 | `ExecutionAttempt` / `effectKey` | — | — | — | 🔨 S1 | — | — | — | — | — |
-| Outbox | — | 🔨 S6 | — | 🔨 S1 | — | 🔨 S1 | ✅ | 🔨 S7 | — |
+| Outbox | — | ✅ S6 | — | 🔨 S1 | — | 🔨 S1 | ✅ | 🔨 S7 | — |
 | Touchpoint capture | — | 🔨 S5 | — | 🔨 S5 | 🔨 S5 | — | — | — | — |
 | Consent evidence | ◷ | 🔨 S5 | ◷ | 🔨 S5 | 🔨 S5 | — | — | — | — |
-| Qualification events | — | 🔨 S6 | — | 🔨 S6 | — | — | — | — | — |
+| Qualification events | — | ✅ S6 | — | ✅ S6 | — | — | — | — | — |
 | Lead → order attribution | — | 🔨 S7 | — | 🔨 S7 | — | — | ✅ **exists** | — | 🔨 S7 |
 | `revenue.recognised` | — | — | — | 🔨 S7 | — | — | 🔨 S7 | 🔨 S7 | 🔨 S7 |
 | Money reversal events | — | — | — | 🔨 S7 | — | — | 🔨 S7 | 🔨 S7 | — |

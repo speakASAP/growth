@@ -4,6 +4,97 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
 
 ## Open
 
+- [x] **S6 deployed and verified in production, 2026-07-22.** Migration 006 applied (via the
+      migrate init container, as the owner role); the leads Prisma migration applied (`prisma
+      migrate status` → "Database schema is up to date", 7 migrations). All four S6 paths were
+      exercised against real services — see "S6 production verification" below.
+
+- [x] **S6b — the experiment report (F-006 §3), deployed and verified 2026-07-22.** Read API
+      `GET /experiments/:id/report`, screen `GET /experiments/:id`, spend form
+      `POST /experiments/:id/spend`, all on growth-core. C-006 §6.
+
+- [ ] **⚠️ TEST DATA LEFT IN PRODUCTION — owner decision, NOT cleaned up.**
+      Created by the 2026-07-22 verification run. **Nothing was deleted**, deliberately: one of the
+      affected tables is append-only by design and by grant, and removing rows from it would mean
+      assuming the owner role and defeating the guarantee that was just verified. The standing
+      instruction is never to delete in production, so this is reported rather than acted on.
+
+      | Where | Exact id | Note |
+      |---|---|---|
+      | `growth_core` `qualification.lead` | `d5efeb20-a5da-44ba-ad08-acdacaa25c08` | test lead |
+      | `growth_core` `qualification.lead_qualification` | `66a6a085-a22c-4363-8a53-bfdd983ae638`, `05563c41-12d9-439d-8691-d7c7a7cda54c` | **append-only — do not delete** |
+      | `growth_core` `spend.manual_observation` | `s6verify-obs-dea8aa57-ce6e-45d6-9de5-9d26feb7e4f7` (1500.0000 CZK), `27c4b061-c81f-4ce0-8d9e-ee45787be281` (250.5000 CZK) | **skews exp-001 by 1750.5000 CZK** |
+      | `growth_core` `attribution.*` | correlation_id `s6verify-8a9e3056-1401-45be-9685-cd2b6636eaf9` | 3 rows: auth_redirect, registration, identity_link |
+      | leads + auth | user `23f04ab4-1c09-47c1-962c-36f075bc6618`, email `s6verify-8a9e3056@example.invalid` | one lead, two qualification rows |
+
+      **The consequence that matters:** the two spend rows mean `exp-001` currently reports
+      1750.5000 CZK of spend that was never spent. Before the first real experiment runs, either
+      delete those two rows **by the exact observation ids above** (never by an email or id
+      *pattern* — 600+ rows match `%@example.invalid` and most belong to other people's smoke
+      tests), or run the real experiment under a different `experimentId`.
+
+      The invariant-respecting alternative, if deletion is unwanted: post compensating **negative**
+      observations. C-006 §2.2 permits a negative `amount.value` precisely for corrections, and it
+      leaves the history intact instead of rewriting it.
+
+- [ ] **Publishing the experiment screen on a public hostname — owner decision (C-006 §6.8).**
+      The screen is on growth-core, which has **no ingress**, and the owner reaches it with
+      `kubectl -n statex-apps port-forward deploy/growth-core 3376:3376`. It was **not** put on
+      growth-web: that is public on `bazos.alfares.cz/l` and has no authentication at all, so an
+      owner-only screen showing spend and lead counts cannot go there. Making it publicly reachable
+      needs a real authenticated surface (S1b) first. Not done, and not decided by an implementer.
+
+- [ ] **The report counts leads per WORKSPACE, not per experiment (C-006 §6.6).**
+      `qualification.lead` has no `experiment_id`; spend has no `campaignId` (below). So the report
+      divides the named experiment's spend by every lead in the workspace. Correct while one
+      experiment runs per workspace, wrong the moment a second does. Same defect class as the
+      missing campaign dimension, and it needs the same v2 decision.
+
+### S6 production verification, 2026-07-22
+
+What was proven, and how:
+
+1. **Lead reaches `qualification.lead` off `growth.lead-created`** — driven end to end from the
+   real landing, not injected: `bazos.alfares.cz/l/v1-cena` → `POST /l/consent` (204, `gsid` cookie
+   scoped `Domain=bazos.alfares.cz`) → `POST /l/intent` (204) → `POST /ui/auth-redirect` (204) →
+   `POST /auth/register` carrying the same `state` → `attribution.auth_redirect`,
+   `attribution.registration` and `attribution.identity_link` joined on `payload.correlationId` →
+   `qualification.lead`.
+2. **Judgement from the admin panel** — `POST https://leads.alfares.cz/api/admin/leads/<id>/qualification`
+   → 201 → row in `qualification.lead_qualification`. `decided_by_id` is the real auth user id, not
+   the literal string `"owner"`, as C-006 §1.3 requires.
+3. **A correction appends** — a second POST with `supersedesQualificationId` produced a **second**
+   row with the first untouched. Then **falsified**: `UPDATE` and `DELETE` on that table as the
+   runtime role were both refused with `permission denied for table lead_qualification`. The
+   append-only guarantee is enforced by the database, not merely documented.
+4. **`POST /spend/observations`** — 201, stored `1500.0000` exactly as `NUMERIC(20,4)`, `is_manual`
+   true, and the `ingest.event_buffer` row reached status `published`, which on a confirm channel
+   means the broker durably has it.
+
+Also observed: all four growth queues had 1 consumer and 0 messages after the deploy, so the
+S5-era `growth.lead-created` backlog warning resolved with nothing stranded.
+
+S6b was verified on the same production data: the live report returned `costPerRegistration`
+`"1500.00"` and `costPerQualifiedLead` `null` (0 qualified → renders `—`), the screen rendered, and
+the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.5000`.
+
+- [ ] **Spend has no campaign dimension — owner decision needed.**
+      `growth.spend.observed_manual.v1` carries `experimentId` but no `campaignId`, so spend is
+      recorded per experiment per period only. That is enough while one campaign runs per
+      experiment and wrong the moment a second one does. Adding `campaignId` is a **v2 schema**,
+      not a quiet field addition. Flagged, not decided (C-006 §2.4).
+
+- [ ] **`LeadQualification` in leads-microservice is append-only by convention only.** growth-core
+      holds the real guarantee — the runtime role has no UPDATE or DELETE grant on
+      `qualification.lead_qualification`, asserted in `qualification.db-spec.ts`. leads connects to
+      its database as the owning role through Prisma, where a trigger is a comment with extra
+      steps, so the leads-side table is upheld by there being no update path in the code. growth-core
+      is the system of record for judgements; the leads table is the weaker copy.
+
+- [ ] **No dead-letter queue on the qualification consumer either.** Same shape as the attribution
+      gap below: unparseable messages are dropped with the body logged, failed writes requeue
+      forever.
+
 - [ ] **S1a VERIFY** — owner manual check from F-001. **The only thing standing between S1a and
       done**, and it needs the owner, not an agent: steps 1, 5 and 6 are judgements about whether
       the record reads back as a decision in your own words.
@@ -99,6 +190,100 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-22 — S6 DOC + CONTRACT + IMPL (not deployed, not verified in production).**
+      Qualification and manual spend, across `growth-core` and `leads-microservice`. Tests:
+      growth-core **243** (was 187), leads **174** (was 137); no baseline test was lost or changed
+      in meaning. Build and `tsc --noEmit` clean on both. **Nothing was deployed** — see Open.
+
+      **A contract defect and a documentation defect were found and fixed at source, not worked
+      around.**
+
+      - **F-006 described an endpoint that does not exist.** It stated that
+        `leads.controller.ts` carried `PATCH /leads/:id → status` and that S6 was therefore only a
+        matter of making an existing status change emit an event. There is no such route, and
+        `Lead.status` is written in exactly two places (`'new'` at creation, `'confirmed'` on token
+        confirmation) — never by an operator. Implemented as written, the slice would have hung a
+        correct, tested qualification event off a transition nothing can trigger, and it would have
+        emitted nothing forever. Qualification is a **new** surface; F-006 now says so, with the
+        original claim quoted rather than deleted.
+      - **`spend.observed_manual.v1.json` accepted a blank `evidenceReference`.** No `minLength`,
+        so `""` validated. That field is the entire provenance of a hand-typed spend figure, and
+        the repository rule is that blank free text is rejected rather than defaulted. Caught by a
+        test written against the contract before the schema was read closely. `minLength: 1` added
+        there and on `observationId`, `experimentId` and `enteredBy`.
+
+      **Where the owner marks a lead — F-006's open question, resolved.** The "custom CRM in the
+      client panel" is `leads-microservice`'s own admin panel, which already exists and is already
+      authenticated (`public/admin.html` + `admin.js`, `AdminLeadsController`, `AdminAuthGuard`
+      validating against auth-microservice, workspace-scoped). `GET /api/admin/leads` already
+      returns `id` per lead, so nothing new was needed to address a lead. The marking surface is
+      therefore two buttons and a reason box inside the lead detail that was already on screen —
+      not a new UI, and `bazos-service` does not join the required owners.
+
+      **`growth.lead.qualification_recorded.v1`** (new contract [C-006](docs/23_documentation_contracts/C-006-qualification-and-spend.md),
+      new schema, producer `leads-microservice`, consumer `growth-core`). Three things are pinned
+      as `const` in the schema rather than left as convention, because each one is a decision that
+      must cost a contract change to reverse: `criteriaVersion: "v1-owner-manual"`,
+      `decidedByType: "human"`, and the absence of `pending` from the status enum.
+
+      - **`pending` is not a value anywhere.** It is the absence of a judgement — derived by an
+        outer join, never stored. Emitting it would record a non-decision as a decision and would
+        make "not worked yet" indistinguishable from "looked, and deferred". It is also
+        load-bearing for the cost metric: pending leads stay in the numerator of cost-per-qualified,
+        and a derived `pending` cannot drift from that rule because there is nothing to set.
+      - **`decidedById` is the authenticated admin user id, never the string `"owner"`**, and it is
+        read from the auth guard, never from the request body — a body-supplied decider would let
+        anyone reaching the endpoint attribute a judgement to somebody else. That answers F-006's
+        fourth open question: any principal `AdminAuthGuard` accepts may qualify, and the event
+        records which one.
+      - **A correction appends.** `POST /admin/leads/:id/qualification` (POST, not PATCH — it adds
+        a judgement, it does not edit one) with `supersedesQualificationId`. Both judgements stay
+        readable; the panel shows the superseded one rather than only the current verdict.
+
+      **The append-only guarantee is held as a privilege, not a convention.** Migration `006` grants
+      the runtime role `SELECT, INSERT` on `qualification.lead_qualification` and no `UPDATE` or
+      `DELETE`, the same shape as `decision_artefact`. `qualification.db-spec.ts` asserts the
+      boundary against the real database; falsified by granting UPDATE and DELETE back, which turns
+      two specs red.
+
+      **`qualification.lead_qualification` deliberately has no foreign key to `qualification.lead`.**
+      Two queues drain at different rates, so a judgement can arrive before the lead it is about. A
+      foreign key would nack it into a requeue spin against a row not yet written, and the
+      judgement — the scarcer fact, the one a human produced — would be the thing lost. Joined by
+      `lead_id` at read time; a judgement with no lead is visible and countable rather than gone.
+
+      **`growth.lead-created` now has a consumer.** It has been bound and unconsumed since S5, so
+      it may hold a backlog that drains the moment this ships. `QualificationConsumer` declares
+      **and binds** both queues on boot rather than assuming they exist, for the usual reason: a
+      topic exchange discards a message with no matching binding, and an unbound queue looks
+      perfectly healthy while receiving nothing.
+
+      **Manual spend** — `POST /spend/observations` on growth-core (ClusterIP only, unauthenticated
+      like every other surface here; absence of a public route is the access control). Two choices
+      worth recording:
+
+      - The endpoint takes the **payload**, not an envelope, and growth-core mints the envelope
+        itself. An accepted envelope would let the caller claim to be a different producer.
+      - The minted envelope is validated with **the same `validateEnvelope` the ingest edge uses**,
+        before anything is stored. growth-core producing an event it would itself reject on ingest
+        is exactly the drift a shared validator exists to prevent. It then publishes **through the
+        ingest buffer**, so a broker outage delays the observation instead of losing it — reusing
+        the durability that already exists rather than opening a second, worse path.
+      - **Re-submitting the same `observationId` with a different amount is a 409, not a silent
+        no-op.** A plain `ON CONFLICT DO NOTHING` would swallow the dangerous case: the owner
+        corrects a figure, reuses the id, gets a cheerful success, and the stored spend is still the
+        old value — every cost metric downstream then quietly wrong. Amounts are compared as
+        `NUMERIC` inside Postgres, so `15000.00` and `15000.0000` are the same money rather than a
+        false conflict. Money is a decimal string from the request to the driver and back; it never
+        passes through a JS number.
+
+      Guards falsified to prove they bite, then restored: `pending` accepted as a status (turns the
+      parser spec red), the lead-visibility scope check removed (write path would accept a lead the
+      operator cannot see), the blank-reason refusal in the panel, the runtime UPDATE/DELETE grants,
+      and the spend amount comparison forced true. The typecheck itself was falsified too — the
+      repository warns that `npx tsc` can silently pass, so `./node_modules/.bin/tsc` was confirmed
+      to actually report an injected type error.
 
 - [x] **2026-07-22 — priced button: the experiment measures willingness to pay, and takes no money.**
       Owner decision: this run tests whether the service is wanted at all, so nothing is charged.

@@ -1,9 +1,9 @@
 {
-  "stage": "deployed",
+  "stage": "S6 deployed and verified in production; S6b (experiment report) deployed and verified",
   "health": "ok",
-  "deployed": true,
-  "slice": "S5",
-  "gate": "S1a IMPL owner-confirmed correct, VERIFY (F-001 manual check) still pending; S5 W1 + W6 + W3 + W4 + W2 done and live. Only W5 (leads from registration) remains in the slice.",
+  "deployed": "S5 yes. S6 yes — deployed 2026-07-22, migration 006 applied in production, and all four write/consume paths exercised against real services. S6b (read API + owner screen) deployed 2026-07-22.",
+  "slice": "S6b",
+  "gate": "S1a IMPL owner-confirmed, VERIFY (F-001 manual check) still pending. S5 complete and live. S6 DOC+CONTRACT+IMPL+VERIFY complete. S6b DOC+CONTRACT+IMPL+VERIFY complete.",
   "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 (bazos.alfares.cz/l)",
   "containers": {
     "growth-core": {
@@ -16,28 +16,60 @@
       "source": "services/web",
       "port": 3377,
       "deployed": true,
-      "ingress": "bazos.alfares.cz/l \u2014 a separate Ingress object for that host, NOT growth.alfares.cz. The gsid cookie is scoped Domain=bazos.alfares.cz so bazos-service can read it; another host leaves attribution permanently empty while reporting healthy (D-005)."
+      "ingress": "bazos.alfares.cz/l — a separate Ingress object for that host, NOT growth.alfares.cz. The gsid cookie is scoped Domain=bazos.alfares.cz so bazos-service can read it; another host leaves attribution permanently empty while reporting healthy (D-005)."
     }
   },
   "database": {
     "name": "growth_core",
     "owner_role": "growth_core_owner",
     "runtime_role": "growth_core",
-    "note": "Roles split 2026-07-20. The runtime role holds DML grants only and owns nothing, so it cannot disable the decision_artefact append-only trigger. Migrations 001-005 applied in production."
+    "note": "Roles split 2026-07-20. The runtime role holds DML grants only and owns nothing. Migrations 001-006 applied in production (006 confirmed applied via the migrate init container 2026-07-22).",
+    "schemas": {
+      "qualification": "S6, migration 006, APPLIED IN PRODUCTION. lead (anchor, from growth.lead-created) + lead_qualification (append-only). Append-only VERIFIED in production 2026-07-22: the runtime role holds only SELECT,INSERT and a direct UPDATE and DELETE were both refused with 'permission denied for table lead_qualification'. lead_qualification has NO foreign key to lead on purpose.",
+      "spend": "S6, migration 006, APPLIED IN PRODUCTION. manual_observation, owner-typed ad spend. amount_value NUMERIC(20,4), rendered as a decimal string everywhere. superseded_by_observation_id exists for S8 and is unused."
+    }
+  },
+  "leads_database": {
+    "note": "LeadQualification table added by prisma/migrations/20260722_add_lead_qualification and APPLIED in production (prisma migrate status: 'Database schema is up to date', 7 migrations, 2026-07-22)."
   },
   "broker": {
     "exchanges": {
       "growth.events": "topic, durable, routing key = event type. Produced by growth-core ingest drain, carrying growth.auth_redirect.initiated.v1 from bazos-service. Consumed by growth-core into queue growth.auth-redirects, which the consumer declares and binds itself on boot.",
-      "auth.events": "topic, durable. Produced by auth-microservice (W3). Consumed by growth-core into queue growth.auth-registrations."
+      "auth.events": "topic, durable. Produced by auth-microservice (W3). Consumed by growth-core into queue growth.auth-registrations.",
+      "leads.events": "topic, durable. Produced by leads-microservice. Carries growth.lead.created_from_registration.v1 (S5 W5) and, once S6 ships, growth.lead.qualification_recorded.v1. growth-core consumes both into growth.lead-created and growth.lead-qualification, which QualificationConsumer declares AND binds itself on boot."
     },
+    "unconsumed_backlog_warning": "RESOLVED. growth.lead-created, growth.lead-qualification, growth.auth-redirects and growth.auth-registrations all had 1 consumer and 0 messages on 2026-07-22 after the S6 deploy. No backlog was stranded.",
     "note": "A topic exchange discards a message with no matching binding, so the consumer declares AND binds both queues on boot rather than relying on them existing. No dead-letter queue yet: unparseable messages are dropped with their body logged, failed joins are requeued indefinitely."
   },
-  "notes": "growth-core 187 tests, growth-web 33. Verified in production 2026-07-22: the landing sets a scoped HttpOnly gsid cookie on consent and records nothing on refusal; a click plus a registration produce one attribution.identity_link row. Test data removed. Consent records currently live only in the visitor browser - see TASKS.md.",
+  "s6": {
+    "built": "LeadQualificationEvent (growth.lead.qualification_recorded.v1, contract C-006), the manual marking surface (two buttons in the leads admin panel that already existed, POST /api/admin/leads/:id/qualification behind AdminAuthGuard), ManualSpendObservation intake (POST /spend/observations on growth-core), and growth-core consuming both growth.lead-created and growth.lead-qualification.",
+    "notBuilt": "Nothing from F-006 §3 remains unbuilt — the experiment view shipped as S6b. See s6b below.",
+    "contractDefectsFixed": "F-006 claimed a PATCH /leads/:id status endpoint that does not exist — qualification is a new surface, not a decoration on an existing one. spend.observed_manual.v1.json accepted a blank evidenceReference (no minLength), which would have allowed a hand-typed spend figure with no provenance.",
+    "ownerDecisionNeeded": "Spend has no campaign dimension. experimentId + period only; a second campaign per experiment needs campaignId, which is a v2 schema rather than a quiet field addition (C-006 §2.4).",
+    "pendingIsDerived": "pending is never stored and is not a valid status anywhere — it is the absence of a judgement. Pending leads stay in the numerator of cost-per-qualified, and a derived pending cannot drift from that rule.",
+    "verifiedInProduction": {
+      "date": "2026-07-22",
+      "leadReachedQualificationLead": "PROVEN end to end from the real landing: bazos.alfares.cz/l/v1-cena -> consent (gsid cookie, Domain=bazos.alfares.cz) -> /l/intent -> /ui/auth-redirect -> auth register with state -> attribution.auth_redirect + registration + identity_link joined on correlationId -> qualification.lead. leadId d5efeb20-a5da-44ba-ad08-acdacaa25c08.",
+      "judgementFromAdminPanel": "PROVEN. POST https://leads.alfares.cz/api/admin/leads/<id>/qualification -> 201 -> qualification.lead_qualification. decided_by_id is the real auth user id (e2a6fdd4-...), NOT the string 'owner', as C-006 §1.3 requires.",
+      "correctionAppends": "PROVEN. A second POST with supersedesQualificationId produced a SECOND row; the original was untouched. Then falsified: UPDATE and DELETE as the runtime role were both refused, permission denied.",
+      "spendObservation": "PROVEN. POST /spend/observations -> 201, row stored with amount_value 1500.0000 exactly, is_manual true, and the ingest buffer row reached status 'published' (confirm-channel, so the broker durably has it)."
+    }
+  },
+  "notes": "growth-core 276 tests (baseline 243 before S6b, +33 new, 24 suites, no baseline test lost), leads-microservice 174, growth-web 33. Verified in production 2026-07-22: the full S6 chain and the S6b report. TEST DATA LEFT IN PRODUCTION ON PURPOSE — see TASKS.md 'S6/S6b production test data'; it is NOT cleaned up and the two spend rows (1750.5000 CZK total) currently skew exp-001. Deletion is an owner decision because one of the affected tables is append-only by design.",
   "attribution": {
     "schema": "attribution",
     "tables": "auth_redirect, registration, identity_link",
     "joinKey": "payload.correlationId - never the envelope's, which auth mints for every registration including direct signups",
     "gsid": "verified with a constant-time HMAC check; only the proven sessionId is stored, never the token. Forged tokens cost the attribution, not the conversion.",
     "notImplemented": "gsid_orphan - W2 now produces touchpoints, so this is implementable; see TASKS.md"
+  },
+  "s6b": {
+    "built": "The experiment report. GET /experiments/:id/report (JSON read API) and GET /experiments/:id (server-rendered owner screen with a spend entry form posting to POST /experiments/:id/spend). Derives cost per registration, cost per qualified lead, the attributed/unattributed split and a derived pending. Owns no table and adds no migration.",
+    "money": "Summed as BigInt scaled 10^4 parsed from the NUMERIC(20,4) text — never through Number/parseFloat. Cost metrics round half-up to 2dp once, at the end, and are returned as strings.",
+    "divisionSafety": "Zero registrations or zero qualified -> null in the API, '—' on screen. Never 0, never NaN, never Infinity. Verified in production: the live report returned costPerQualifiedLead null with 0 qualified.",
+    "mixedCurrency": "More than one currency in an experiment's observations -> no total and no cost metrics, with the reason stated on screen. Summing CZK and EUR would be wrong and look fine.",
+    "exposure": "growth-core ONLY, which has no ingress. NOT on growth-web: growth-web is public on bazos.alfares.cz/l with no authentication, so an owner-only screen cannot live there. Owner reaches it via kubectl port-forward deploy/growth-core 3376:3376.",
+    "ownerDecisionNeeded": "Publishing the screen on a public hostname needs an authenticated surface (S1b) — NOT done, and deliberately not done unilaterally (C-006 §6.8).",
+    "scopeGap": "qualification.lead has no experiment_id, so the report counts every lead in the WORKSPACE against the named experiment's spend. Correct for one experiment per workspace, wrong for two. C-006 §6.6."
   }
 }

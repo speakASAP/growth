@@ -29,6 +29,9 @@ const SCHEMAS = [
   { file: 'lead.created_from_registration.v1.json', target: '../src/ingest/schemas' },
   { file: 'spend.observed_manual.v1.json', target: '../src/ingest/schemas' },
   { file: 'payment_intent.declared.v1.json', target: '../src/ingest/schemas' },
+  // S6 — qualification (C-006). growth-core consumes it, and validates the spend event it
+  // produces itself against the same schema the ingest edge would apply.
+  { file: 'lead.qualification_recorded.v1.json', target: '../src/ingest/schemas' },
 ];
 
 let synced = 0;

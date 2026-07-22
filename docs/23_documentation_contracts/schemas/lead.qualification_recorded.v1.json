@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfares.cz/schemas/growth/lead.qualification_recorded.v1.json",
+  "title": "Lead qualification recorded",
+  "description": "A judgement the owner made by hand after working a lead. Append-only: a correction is a new event that supersedes an earlier one, never an edit. There is no `pending` decision - pending is the absence of any event for a lead.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "workspaceId",
+    "correlationId",
+    "dataClass",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "growth.lead.qualification_recorded.v1"
+    },
+    "eventVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "leads-microservice"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": "string",
+      "description": "OPTIONAL - root events have none"
+    },
+    "dataClass": {
+      "const": "personal",
+      "description": "The payload carries no contact details, but it is a judgement ABOUT a person and must be severed on an erasure request like the lead it references."
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qualificationId",
+        "leadId",
+        "criteriaVersion",
+        "qualificationStatus",
+        "decidedByType",
+        "decidedById",
+        "decidedAt",
+        "reason"
+      ],
+      "properties": {
+        "qualificationId": {
+          "type": "string",
+          "description": "Identity of THIS judgement, not of the lead. A lead accumulates many."
+        },
+        "leadId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "criteriaVersion": {
+          "const": "v1-owner-manual",
+          "description": "Complete contact (phone AND email) + a detailed request + the person replied on some channel (D19). Pinned as a const: a later criteria version is a new event version, so historical judgements never silently re-interpret under new rules."
+        },
+        "qualificationStatus": {
+          "enum": ["qualified", "disqualified"],
+          "description": "`pending` is deliberately absent. Pending is the absence of a judgement, and emitting it would record a non-decision as a decision."
+        },
+        "decidedByType": {
+          "const": "human",
+          "description": "Always human at v1. No rule-based or AI qualification exists (D19 4.4.1) and this const is what stops one being added without a contract change."
+        },
+        "decidedById": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The authenticated admin user id that made the call. Not the string 'owner' - once a second operator exists, an unattributable judgement cannot be audited retroactively."
+        },
+        "decidedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Free text, never blank and never defaulted. A defaulted reason looks complete and carries nothing."
+        },
+        "supersedesQualificationId": {
+          "type": "string",
+          "description": "OPTIONAL - present when this judgement corrects an earlier one. The superseded event is never deleted or mutated; both stay queryable."
+        }
+      }
+    }
+  }
+}
