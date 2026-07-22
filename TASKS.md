@@ -13,29 +13,34 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       `GET /experiments/:id/report`, screen `GET /experiments/:id`, spend form
       `POST /experiments/:id/spend`, all on growth-core. C-006 §6.
 
-- [ ] **⚠️ TEST DATA LEFT IN PRODUCTION — owner decision, NOT cleaned up.**
-      Created by the 2026-07-22 verification run. **Nothing was deleted**, deliberately: one of the
-      affected tables is append-only by design and by grant, and removing rows from it would mean
-      assuming the owner role and defeating the guarantee that was just verified. The standing
-      instruction is never to delete in production, so this is reported rather than acted on.
+- [x] **2026-07-22 — production test data REMOVED on owner instruction.** `growth_core` is empty:
+      every table listed below returned 0 rows afterwards. The owner's reason for deleting rather
+      than posting compensating negative observations: the platform is pre-launch, no real user has
+      ever been admitted, so there is no history worth preserving and `exp-001` had to start clean.
 
-      | Where | Exact id | Note |
-      |---|---|---|
-      | `growth_core` `qualification.lead` | `d5efeb20-a5da-44ba-ad08-acdacaa25c08` | test lead |
-      | `growth_core` `qualification.lead_qualification` | `66a6a085-a22c-4363-8a53-bfdd983ae638`, `05563c41-12d9-439d-8691-d7c7a7cda54c` | **append-only — do not delete** |
-      | `growth_core` `spend.manual_observation` | `s6verify-obs-dea8aa57-ce6e-45d6-9de5-9d26feb7e4f7` (1500.0000 CZK), `27c4b061-c81f-4ce0-8d9e-ee45787be281` (250.5000 CZK) | **skews exp-001 by 1750.5000 CZK** |
-      | `growth_core` `attribution.*` | correlation_id `s6verify-8a9e3056-1401-45be-9685-cd2b6636eaf9` | 3 rows: auth_redirect, registration, identity_link |
-      | leads + auth | user `23f04ab4-1c09-47c1-962c-36f075bc6618`, email `s6verify-8a9e3056@example.invalid` | one lead, two qualification rows |
+      Deleted **by exact id**, never by pattern — the earlier warning stands and is why the
+      610 accounts matching `%@example.invalid` (created 2026-06-28..2026-07-20) were left alone.
+      They predate S6 and belong to other smoke tests.
 
-      **The consequence that matters:** the two spend rows mean `exp-001` currently reports
-      1750.5000 CZK of spend that was never spent. Before the first real experiment runs, either
-      delete those two rows **by the exact observation ids above** (never by an email or id
-      *pattern* — 600+ rows match `%@example.invalid` and most belong to other people's smoke
-      tests), or run the real experiment under a different `experimentId`.
+      | Where | Rows |
+      |---|---|
+      | `growth_core` `qualification.lead` / `lead_qualification` | 1 / 3 |
+      | `growth_core` `spend.manual_observation` | 3 — the 1750.5000 CZK that skewed `exp-001`, plus one later verification row |
+      | `growth_core` `attribution.auth_redirect` / `registration` / `identity_link` | 1 / 1 / 1 |
+      | `growth_core` `ingest.event_buffer` | 5 |
+      | `growth_core` `governance.decision_artefact` | 3 — the `exp-verify-001` S1a fixtures |
+      | `leads` `Lead` / `LeadQualification` / `LeadContactMethod` | 1 / 3 / 1 |
+      | `auth` `users` | 1 — `s6verify-8a9e3056@example.invalid` |
 
-      The invariant-respecting alternative, if deletion is unwanted: post compensating **negative**
-      observations. C-006 §2.2 permits a negative `amount.value` precisely for corrections, and it
-      leaves the history intact instead of rewriting it.
+      **The immutability guarantee was bypassed, deliberately and once.**
+      `governance.decision_artefact` is protected by the trigger `decision_artefact_immutable`
+      (BEFORE DELETE OR UPDATE), not merely by grants, so the delete required
+      `ALTER TABLE ... DISABLE TRIGGER` inside the same transaction that re-enabled it. The other
+      append-only tables are protected by grants alone and were reachable as `dbadmin`.
+
+      The trigger was then **proven to bite again**: an INSERT + DELETE probe inside a rolled-back
+      transaction still failed with `decision_artefact is append-only (attempted DELETE)`. A
+      re-enable that was never tested would be indistinguishable from one that silently failed.
 
 - [ ] **Publishing the experiment screen on a public hostname — owner decision (C-006 §6.8).**
       The screen is on growth-core, which has **no ingress**, and the owner reaches it with

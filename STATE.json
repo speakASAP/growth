@@ -55,7 +55,7 @@
       "spendObservation": "PROVEN. POST /spend/observations -> 201, row stored with amount_value 1500.0000 exactly, is_manual true, and the ingest buffer row reached status 'published' (confirm-channel, so the broker durably has it)."
     }
   },
-  "notes": "growth-core 276 tests (baseline 243 before S6b, +33 new, 24 suites, no baseline test lost), leads-microservice 174, growth-web 33. Verified in production 2026-07-22: the full S6 chain and the S6b report. TEST DATA LEFT IN PRODUCTION ON PURPOSE — see TASKS.md 'S6/S6b production test data'; it is NOT cleaned up and the two spend rows (1750.5000 CZK total) currently skew exp-001. Deletion is an owner decision because one of the affected tables is append-only by design.",
+  "notes": "growth-core 276 tests (baseline 243 before S6b, +33 new, 24 suites, no baseline test lost), leads-microservice 174, growth-web 33. Verified in production 2026-07-22: the full S6 chain and the S6b report. TEST DATA REMOVED 2026-07-22 on owner instruction — growth_core is empty (every table 0 rows), and the leads/auth artefacts of the verification run are gone. exp-001 no longer carries the 1750.5000 CZK it never spent. Deleting governance.decision_artefact required disabling its immutability trigger inside the deleting transaction; the trigger was re-enabled and then re-proven to refuse a DELETE. The 610 accounts matching %@example.invalid predate S6, belong to other smoke tests, and were deliberately NOT touched. See TASKS.md.",
   "attribution": {
     "schema": "attribution",
     "tables": "auth_redirect, registration, identity_link",
