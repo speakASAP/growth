@@ -46,18 +46,25 @@ const grant = {
     categories: { necessary: true, analytics: true },
     decidedAt: '2026-07-22T09:00:00.000Z',
   },
-  landingVersionId: 'landing-a',
+  landingVersionId: 'v1-cena',
 };
 
 const refuse = {
   decision: { ...grant.decision, categories: { necessary: true, analytics: false } },
-  landingVersionId: 'landing-a',
+  landingVersionId: 'v1-cena',
 };
 
 describe('the landing responds at all', () => {
-  it('serves the page', async () => {
-    const res = await request(app.getHttpServer()).get('/l/landing-a').expect(200);
-    expect(res.text).toContain('landing-a');
+  it('serves a known variant', async () => {
+    const res = await request(app.getHttpServer()).get('/l/v1-cena').expect(200);
+    expect(res.text).toContain('v1-cena');
+    expect(res.text).toMatch(/49\s*Kč/);
+  });
+
+  it('404s an unknown variant instead of quietly serving another', async () => {
+    // A fallback would record touchpoints against copy the visitor never read. A broken ad URL
+    // should be obviously broken.
+    await request(app.getHttpServer()).get('/l/v9-does-not-exist').expect(404);
   });
 
   it('answers a consent grant instead of hanging', async () => {
@@ -86,7 +93,8 @@ describe('the consent gate, over real HTTP', () => {
   });
 
   it('cannot be granted by a GET, which a browser may prefetch', async () => {
-    await request(app.getHttpServer()).get('/l/consent').expect(200);
+    // There is no GET route for consent; the path falls through to the variant lookup and 404s.
+    await request(app.getHttpServer()).get('/l/consent').expect(404);
     expect(emitted).toHaveLength(0);
   });
 });

@@ -1,78 +1,102 @@
+import { LandingVariant } from './variants';
+
 /**
  * The experiment landing (F-005 §1).
  *
- * A variant is an immutable clone: it is never edited in place, and a change produces a new
- * landingVersionId. The id in the URL is therefore also the id recorded on every touchpoint the
- * page produces, which is what makes a result attributable to a specific page rather than to
- * whatever that page happened to say at the time.
+ * One template, many variants. The copy lives in `variants.ts` as data so that adding a variant
+ * is adding a record, not editing a page — and so the id a touchpoint records is provably the id
+ * whose words the visitor read.
  *
- * The legal footer is inherited from the production Bazos page — privacy, cookies, GDPR, terms,
- * EU AI Act, operator identity, and the "not affiliated with Bazoš.cz" disclaimer. It is not
- * rebuilt here; a clone that quietly dropped a disclosure would be a compliance problem wearing
- * the appearance of a copy.
- *
- * The consent banner blocks measurement, not content: the page is fully usable after a refusal,
- * it simply records nothing.
+ * The legal footer is not optional and not variant-specific: privacy, cookies, terms, the EU AI
+ * Act notice, operator identity, and the "not affiliated with Bazoš.cz" disclaimer. A variant that
+ * dropped one would be a compliance problem wearing the appearance of a copy test.
  */
-export function renderLanding(landingVersionId: string): string {
-  const safeVersion = landingVersionId.replace(/[^a-zA-Z0-9._-]/g, '');
-
+export function renderLanding(variant: LandingVariant): string {
   return `<!doctype html>
 <html lang="cs">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bazar nábytku — Alfares</title>
+<title>${esc(variant.title)}</title>
+<meta name="description" content="${esc(variant.lede)}">
+<!-- An experiment variant must never compete with the real site in search results. -->
 <meta name="robots" content="noindex, nofollow">
 <style>
-  :root { color-scheme: light dark; }
+  :root { color-scheme: light dark; --fg:#16181d; --bg:#fff; --muted:#5b6270; --line:#e3e6ea; --accent:#1f6feb; --accent-fg:#fff; --card:#f7f8fa; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e8eaed; --bg:#15171b; --muted:#a2a9b5; --line:#2a2f37; --card:#1c1f25; } }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #1a1a1a; background: #fff; }
-  @media (prefers-color-scheme: dark) { body { color: #eee; background: #16181c; } }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 .75rem; }
-  .lede { font-size: 1.1rem; opacity: .85; margin: 0 0 2rem; }
-  .cta { display: inline-block; padding: .85rem 1.6rem; border-radius: 8px; background: #1f6feb; color: #fff; text-decoration: none; font-weight: 600; }
-  .cta:focus-visible { outline: 3px solid #f0b429; outline-offset: 2px; }
-  footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid rgba(128,128,128,.35); font-size: .82rem; opacity: .75; }
-  footer a { color: inherit; }
-  #consent { position: fixed; inset: auto 0 0 0; padding: 1rem 1.25rem; background: #101418; color: #f5f5f5; display: none; }
-  #consent.show { display: block; }
-  #consent .row { max-width: 720px; margin: 0 auto; display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
-  #consent p { margin: 0; flex: 1 1 320px; font-size: .9rem; }
-  #consent button { padding: .55rem 1.1rem; border-radius: 6px; border: 1px solid #555; background: #22272e; color: #f5f5f5; cursor: pointer; }
-  #consent button.primary { background: #1f6feb; border-color: #1f6feb; }
+  body { margin:0; font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--fg); background:var(--bg); }
+  .wrap { max-width:680px; margin:0 auto; padding:2.5rem 1.25rem 3rem; }
+  header .brand { font-weight:700; letter-spacing:.02em; margin:0 0 2.5rem; }
+  h1 { font-size:2.1rem; line-height:1.18; margin:0 0 .85rem; letter-spacing:-.01em; }
+  .lede { font-size:1.13rem; color:var(--muted); margin:0 0 1.75rem; }
+  ul.points { list-style:none; padding:0; margin:0 0 2rem; }
+  ul.points li { position:relative; padding:.35rem 0 .35rem 1.85rem; }
+  ul.points li::before { content:"✓"; position:absolute; left:0; top:.35rem; color:var(--accent); font-weight:700; }
+  .cta { display:inline-block; padding:.95rem 1.9rem; border-radius:10px; background:var(--accent); color:var(--accent-fg); text-decoration:none; font-weight:650; font-size:1.05rem; border:0; cursor:pointer; }
+  .cta:focus-visible { outline:3px solid #f0b429; outline-offset:3px; }
+  .cta-note { margin:.7rem 0 0; font-size:.9rem; color:var(--muted); }
+  .rules { margin:2.5rem 0 0; padding:1.1rem 1.25rem; background:var(--card); border:1px solid var(--line); border-radius:10px; font-size:.92rem; color:var(--muted); }
+  .rules strong { color:var(--fg); }
+  footer { margin-top:2.5rem; padding-top:1.25rem; border-top:1px solid var(--line); font-size:.82rem; color:var(--muted); }
+  footer a { color:inherit; }
+  footer p { margin:.35rem 0; }
+  #consent { position:fixed; inset:auto 0 0 0; padding:1rem 1.25rem; background:#101418; color:#f5f5f5; display:none; box-shadow:0 -6px 24px rgba(0,0,0,.25); }
+  #consent.show { display:block; }
+  #consent .row { max-width:680px; margin:0 auto; display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; }
+  #consent p { margin:0; flex:1 1 300px; font-size:.9rem; }
+  #consent button { padding:.6rem 1.2rem; border-radius:7px; border:1px solid #4a5058; background:#22272e; color:#f5f5f5; cursor:pointer; font:inherit; }
+  #consent button.primary { background:var(--accent); border-color:var(--accent); font-weight:600; }
 </style>
 </head>
 <body>
   <main class="wrap">
-    <h1>Nábytek z druhé ruky ve vašem městě</h1>
-    <p class="lede">Prohlédněte si aktuální nabídku a domluvte se přímo s prodávajícím.</p>
-    <p><a class="cta" id="cta" href="https://bazos.alfares.cz/client">Zobrazit nabídku</a></p>
+    <header><p class="brand">Alfares · Bazoš</p></header>
+
+    <h1>${esc(variant.h1)}</h1>
+    <p class="lede">${esc(variant.lede)}</p>
+
+    <ul class="points">
+      ${variant.bullets.map((b) => `<li>${esc(b)}</li>`).join('\n      ')}
+    </ul>
+
+    <p><a class="cta" id="cta" href="https://bazos.alfares.cz/client">${esc(variant.cta)}</a></p>
+    <p class="cta-note">${esc(variant.ctaNote)}</p>
+
+    <!-- GOAL-06: the landing states the compliance constraints, and states them as constraints.
+         Nothing here may read as a way around Bazoš's rules, because there is not one. -->
+    <div class="rules">
+      <p><strong>Pracujeme v pravidlech Bazoše, ne mimo ně.</strong></p>
+      <p>
+        Alfares neobchází ověření telefonu, CAPTCHA, limity inzerátů ani jiné kontroly Bazoše.
+        Každé telefonní číslo musí být ověřené a patřit vám. Limit aktivních inzerátů a intervaly
+        kategorií zůstávají v platnosti — pomáháme je dodržet, ne obejít.
+      </p>
+    </div>
 
     <footer>
-      <p>Provozovatel: Alfares s.r.o. · Tato stránka není spojena s Bazoš.cz.</p>
+      <p>Provozovatel: Alfares s.r.o. · Tato stránka ani služba nejsou spojeny s Bazoš.cz.</p>
       <p>
         <a href="https://bazos.alfares.cz/privacy">Ochrana osobních údajů</a> ·
         <a href="https://bazos.alfares.cz/cookies">Cookies</a> ·
-        <a href="https://bazos.alfares.cz/terms">Podmínky</a> ·
+        <a href="https://bazos.alfares.cz/terms">Obchodní podmínky</a> ·
         <a href="https://bazos.alfares.cz/ai">Informace podle nařízení EU o AI</a>
       </p>
-      <p>Verze stránky: ${safeVersion}</p>
+      <p>Verze stránky: ${esc(variant.id)}</p>
     </footer>
   </main>
 
   <div id="consent" role="dialog" aria-live="polite" aria-label="Souhlas s měřením">
     <div class="row">
       <p>Měříme účinnost našich inzerátů. Bez vašeho souhlasu nic neukládáme a stránka funguje dál.</p>
-      <button id="decline">Odmítnout</button>
-      <button id="accept" class="primary">Souhlasím</button>
+      <button id="decline" type="button">Odmítnout</button>
+      <button id="accept" class="primary" type="button">Souhlasím</button>
     </div>
   </div>
 
 <script>
 (function () {
-  var LANDING_VERSION = ${JSON.stringify(safeVersion)};
+  var LANDING_VERSION = ${JSON.stringify(variant.id)};
   var STORAGE_KEY = 'growth.consent';
   var VERSION = 3;
 
@@ -94,7 +118,7 @@ export function renderLanding(landingVersionId: string): string {
   // withdrawn afterwards.
   function send(categories) {
     var decision = {
-      consentRecordId: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+      consentRecordId: (window.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
       version: VERSION,
       categories: categories,
       decidedAt: new Date().toISOString()
@@ -116,10 +140,7 @@ export function renderLanding(landingVersionId: string): string {
 
   var banner = document.getElementById('consent');
   var existing = stored();
-
-  if (!existing || existing.version !== VERSION) {
-    banner.classList.add('show');
-  }
+  if (!existing || existing.version !== VERSION) banner.classList.add('show');
 
   document.getElementById('accept').addEventListener('click', function () {
     banner.classList.remove('show');
@@ -128,7 +149,7 @@ export function renderLanding(landingVersionId: string): string {
 
   document.getElementById('decline').addEventListener('click', function () {
     banner.classList.remove('show');
-    // Recorded locally so the visitor is not asked again. Nothing is sent: a refusal is not an
+    // Remembered locally so the visitor is not asked again. Nothing is sent: a refusal is not an
     // event to collect.
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -142,4 +163,12 @@ export function renderLanding(landingVersionId: string): string {
 </script>
 </body>
 </html>`;
+}
+
+function esc(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

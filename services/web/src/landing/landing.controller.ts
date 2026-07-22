@@ -1,10 +1,11 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Req, Res } from '@nestjs/common';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { TouchpointEmitter } from './touchpoint.emitter';
 import { buildGsidCookie, buildTouchpointEnvelope, ConsentDecision, consentEvidenceFrom } from './landing';
 import { renderLanding } from './landing.assets';
+import { findVariant } from './variants';
 
 interface ConsentBody {
   decision?: ConsentDecision;
@@ -38,10 +39,20 @@ export class LandingController {
   landing(@Param('landingVersionId') landingVersionId: string, @Res() res: any) {
     // A variant is an immutable clone: it is never edited in place, so the id in the URL is also
     // the id recorded on every touchpoint it produces (F-005 §1).
+    const variant = findVariant(landingVersionId);
+
+    // No fallback to a default. Serving some other variant under an unknown id would record
+    // touchpoints against copy the visitor never read, and the experiment would then be comparing
+    // pages nobody saw — a result that looks like data and is not. A broken ad URL should be
+    // obviously broken.
+    if (!variant) {
+      throw new NotFoundException(`unknown landing version: ${landingVersionId}`);
+    }
+
     return res
       .set('Cache-Control', 'no-store, max-age=0')
       .type('html')
-      .send(renderLanding(landingVersionId));
+      .send(renderLanding(variant));
   }
 
   /**
