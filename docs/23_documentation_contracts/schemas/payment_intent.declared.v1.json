@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfares.cz/schemas/growth/payment_intent.declared.v1.json",
+  "title": "Payment intent declared",
+  "description": "A visitor clicked the priced call to action on an experiment landing. THIS IS THE SIGNAL THE FIRST EXPERIMENT EXISTS TO MEASURE: whether anyone will pay the stated price at all. It is not a purchase and not a payment - no payment details are collected and nothing is charged. Everyone who clicks is immediately shown the launch offer (three months at no cost), so the click means 'yes at this price', not 'I have paid'. Recorded separately from growth.auth_redirect.initiated.v1 because intent to pay and intent to register are different questions, and a registration that follows a free offer does not evidence the first one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "workspaceId",
+    "correlationId",
+    "dataClass",
+    "payload"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "eventType": { "const": "growth.payment_intent.declared.v1" },
+    "eventVersion": { "type": "integer", "const": 1 },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "growth-web" },
+    "workspaceId": { "type": "string", "minLength": 1 },
+    "correlationId": {
+      "type": "string",
+      "description": "The anonymous sessionId, so this ties to the touchpoint that preceded it."
+    },
+    "causationId": { "type": "string", "description": "OPTIONAL - root events have none" },
+    "dataClass": { "const": "anonymous" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "experimentId",
+        "experimentVersion",
+        "landingVersionId",
+        "statedPrice",
+        "declaredAt"
+      ],
+      "properties": {
+        "sessionId": { "type": "string" },
+        "experimentId": { "type": "string" },
+        "experimentVersion": { "type": "string" },
+        "landingVersionId": {
+          "type": "string",
+          "description": "Which copy produced the intent - the whole point of the A/B test."
+        },
+        "statedPrice": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value", "currency"],
+          "description": "The price on the button the visitor accepted. A decimal STRING, never a number.",
+          "properties": {
+            "value": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$" },
+            "currency": { "type": "string", "minLength": 3, "maxLength": 3 }
+          }
+        },
+        "declaredAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

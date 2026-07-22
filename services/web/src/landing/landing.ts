@@ -1,4 +1,4 @@
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 /**
  * The landing runtime's pure decisions (EP-005 W2, C-005 §2.1 and §4).
@@ -152,4 +152,99 @@ function compactUtm(query: Record<string, string | undefined>) {
 
 function b64(value: string | Buffer): string {
   return Buffer.from(value as never).toString('base64url');
+}
+
+/**
+ * Recovers the session from the cookie this service set, verifying the signature first.
+ *
+ * The cookie is HttpOnly, so the page cannot tell us the session and cannot forge one either —
+ * the server reads it from the request. An unverified value is not a session: accepting one would
+ * let anyone declare intents against somebody else's visit.
+ */
+export function sessionIdFromGsidCookie(
+  cookieHeader: string | undefined,
+  secret: string,
+): string | undefined {
+  if (!cookieHeader || !secret) return undefined;
+
+  for (const part of cookieHeader.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator === -1) continue;
+    if (part.slice(0, separator).trim() !== GSID_COOKIE) continue;
+
+    const raw = part.slice(separator + 1).trim();
+    const segments = raw.split('.');
+    if (segments.length !== 2) return undefined;
+
+    let sessionId: string;
+    try {
+      sessionId = Buffer.from(segments[0], 'base64url').toString('utf8');
+    } catch {
+      return undefined;
+    }
+    if (!sessionId) return undefined;
+
+    // Constant-time, and length-checked first: timingSafeEqual throws on a size mismatch, which
+    // would turn a malformed cookie into a crash instead of a rejection.
+    const expected = createHmac('sha256', secret).update(sessionId).digest();
+    let given: Buffer;
+    try {
+      given = Buffer.from(segments[1], 'base64url');
+    } catch {
+      return undefined;
+    }
+    if (given.length !== expected.length) return undefined;
+    return timingSafeEqual(given, expected) ? sessionId : undefined;
+  }
+  return undefined;
+}
+
+export interface PaymentIntentInput {
+  sessionId: string;
+  experimentId: string;
+  experimentVersion: string;
+  landingVersionId: string;
+  workspaceId: string;
+  priceValue: string;
+  priceCurrency: string;
+  now: Date;
+  eventId: string;
+}
+
+/**
+ * The signal the first experiment exists to produce: someone said yes at 49 Kč.
+ *
+ * Not a purchase and not a payment — no payment details are collected and nothing is charged. The
+ * visitor is shown the launch offer immediately afterwards, so the click means "yes at this
+ * price", which is the question being asked. Kept separate from the registration event because a
+ * registration that follows a free offer is no evidence at all about willingness to pay.
+ */
+export function buildPaymentIntentEnvelope(input: PaymentIntentInput) {
+  if (!input.sessionId?.trim()) {
+    // No session means no consent, and an intent recorded without one would be a measurement the
+    // visitor never permitted.
+    throw new Error('cannot record a payment intent without a sessionId');
+  }
+
+  const declaredAt = input.now.toISOString();
+
+  return {
+    eventId: input.eventId,
+    eventType: 'growth.payment_intent.declared.v1',
+    eventVersion: 1,
+    occurredAt: declaredAt,
+    producer: 'growth-web',
+    workspaceId: input.workspaceId,
+    correlationId: input.sessionId,
+    dataClass: 'anonymous',
+    payload: {
+      sessionId: input.sessionId,
+      experimentId: input.experimentId,
+      experimentVersion: input.experimentVersion,
+      landingVersionId: input.landingVersionId,
+      // Money is a decimal string, never a number — the schema rejects floats deliberately.
+      statedPrice: { value: input.priceValue, currency: input.priceCurrency },
+      declaredAt,
+    },
+  };
 }

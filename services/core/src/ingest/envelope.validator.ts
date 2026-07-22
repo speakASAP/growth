@@ -9,6 +9,7 @@ import authRedirectInitiated from './schemas/auth_redirect.initiated.v1.json';
 import userRegistered from './schemas/user.registered.v1.json';
 import leadCreatedFromRegistration from './schemas/lead.created_from_registration.v1.json';
 import spendObservedManual from './schemas/spend.observed_manual.v1.json';
+import paymentIntentDeclared from './schemas/payment_intent.declared.v1.json';
 
 /**
  * Envelope validation for C-005 §1–§2. Rejects at the door what the buffer would otherwise
@@ -33,6 +34,7 @@ const VALIDATORS: Record<string, ValidateFunction> = {
   'auth.user.registered.v1': ajv.compile(userRegistered),
   'growth.lead.created_from_registration.v1': ajv.compile(leadCreatedFromRegistration),
   'growth.spend.observed_manual.v1': ajv.compile(spendObservedManual),
+  'growth.payment_intent.declared.v1': ajv.compile(paymentIntentDeclared),
 };
 
 export const KNOWN_EVENT_TYPES = Object.keys(VALIDATORS);

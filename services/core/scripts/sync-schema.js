@@ -28,6 +28,7 @@ const SCHEMAS = [
   { file: 'user.registered.v1.json', target: '../src/ingest/schemas' },
   { file: 'lead.created_from_registration.v1.json', target: '../src/ingest/schemas' },
   { file: 'spend.observed_manual.v1.json', target: '../src/ingest/schemas' },
+  { file: 'payment_intent.declared.v1.json', target: '../src/ingest/schemas' },
 ];
 
 let synced = 0;

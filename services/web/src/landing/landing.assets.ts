@@ -1,4 +1,4 @@
-import { LandingVariant } from './variants';
+import { LandingVariant, LAUNCH_OFFER } from './variants';
 
 /**
  * The experiment landing (F-005 §1).
@@ -36,6 +36,9 @@ export function renderLanding(variant: LandingVariant): string {
   .cta { display:inline-block; padding:.95rem 1.9rem; border-radius:10px; background:var(--accent); color:var(--accent-fg); text-decoration:none; font-weight:650; font-size:1.05rem; border:0; cursor:pointer; }
   .cta:focus-visible { outline:3px solid #f0b429; outline-offset:3px; }
   .cta-note { margin:.7rem 0 0; font-size:.9rem; color:var(--muted); }
+  .offer { margin:1.5rem 0 0; padding:1.25rem 1.4rem; border:2px solid var(--accent); border-radius:12px; background:var(--card); }
+  .offer h2 { margin:0 0 .5rem; font-size:1.25rem; }
+  .offer p { margin:0 0 1rem; }
   .rules { margin:2.5rem 0 0; padding:1.1rem 1.25rem; background:var(--card); border:1px solid var(--line); border-radius:10px; font-size:.92rem; color:var(--muted); }
   .rules strong { color:var(--fg); }
   footer { margin-top:2.5rem; padding-top:1.25rem; border-top:1px solid var(--line); font-size:.82rem; color:var(--muted); }
@@ -60,8 +63,17 @@ export function renderLanding(variant: LandingVariant): string {
       ${variant.bullets.map((b) => `<li>${esc(b)}</li>`).join('\n      ')}
     </ul>
 
-    <p><a class="cta" id="cta" href="https://bazos.alfares.cz/client">${esc(variant.cta)}</a></p>
+    <p><button class="cta" id="cta" type="button">${esc(variant.cta)}</button></p>
     <p class="cta-note">${esc(variant.ctaNote)}</p>
+
+    <!-- Revealed after the priced button is clicked. Nothing is charged and no payment details
+         are collected, so the offer is stated as what it is - a launch offer - rather than as a
+         prize or as an apology for a payment that never happened. -->
+    <section class="offer" id="offer" hidden>
+      <h2>${esc(LAUNCH_OFFER.heading)}</h2>
+      <p>${esc(LAUNCH_OFFER.body)}</p>
+      <p><a class="cta" href="https://bazos.alfares.cz/client">${esc(LAUNCH_OFFER.cta)}</a></p>
+    </section>
 
     <!-- GOAL-06: the landing states the compliance constraints, and states them as constraints.
          Nothing here may read as a way around Bazoš's rules, because there is not one. -->
@@ -145,6 +157,23 @@ export function renderLanding(variant: LandingVariant): string {
   document.getElementById('accept').addEventListener('click', function () {
     banner.classList.remove('show');
     send({ necessary: true, analytics: true });
+  });
+
+  // The priced button. It records that someone said yes at this price and then shows the offer.
+  // No payment is taken and no payment details are requested - the click is the measurement.
+  document.getElementById('cta').addEventListener('click', function () {
+    var offer = document.getElementById('offer');
+    fetch('/l/intent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ landingVersionId: LANDING_VERSION })
+    }).catch(function () {});
+
+    // Shown regardless of whether the call succeeded. A visitor must never be left staring at a
+    // button that did nothing because our analytics was down.
+    offer.hidden = false;
+    offer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
   document.getElementById('decline').addEventListener('click', function () {

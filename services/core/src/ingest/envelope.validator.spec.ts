@@ -119,6 +119,7 @@ describe('validateEnvelope', () => {
         'growth.auth_redirect.initiated.v1',
         'growth.lead.created_from_registration.v1',
         'growth.spend.observed_manual.v1',
+        'growth.payment_intent.declared.v1',
         'growth.touchpoint.observed.v1',
       ].sort(),
     );

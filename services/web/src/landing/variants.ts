@@ -15,10 +15,18 @@
  * 1. **Nothing may imply that Bazoš limits, verification or CAPTCHAs are worked around.** The
  *    service works *within* them; that is the product. A variant that hints otherwise is not
  *    aggressive marketing, it is a description of a service Alfares does not and must not offer.
- * 2. **No claim of a free service.** Registration costs nothing and is described as such; the
- *    service is 49 Kč/month and the price appears beside it every time. "Zdarma" alone, next to a
- *    paid subscription, is the kind of copy a consumer-protection authority reads differently
- *    from a marketer.
+ * 2. **The selling copy never says "zdarma".** The price is the offer and the button carries it.
+ *    The only place the word appears is the launch offer revealed *after* someone has said yes to
+ *    49 Kč — see `LAUNCH_OFFER`. Leading with "free" would measure appetite for a free thing,
+ *    which is not the question being asked.
+ *
+ * ## What this page is actually testing
+ *
+ * Whether anyone will pay 49 Kč/month for this at all. The button is therefore priced, and the
+ * click on it — not the registration — is the signal worth having. **No payment details are
+ * collected and no money is taken.** Everyone who clicks is told immediately that the launch
+ * offer gives them three months at no cost, which is true, and is the offer rather than a
+ * consolation for a charge that never happened.
  *
  * ⚠️ The Czech here was not written by a native speaker. It is idiomatic and grammatical to the
  * best of my ability, but it is going in front of paid traffic — have a native read it before the
@@ -40,6 +48,23 @@ export interface LandingVariant {
 
 const PRICE = '49 Kč měsíčně';
 
+/**
+ * Shown the moment someone clicks the priced button.
+ *
+ * Framed as what it is — a launch offer — rather than as a prize or an apology for a payment that
+ * never happened. Nothing here is untrue: no card is asked for, nothing is charged, and the three
+ * months really are at no cost. That honesty costs nothing, because the measurement has already
+ * happened by the time this is read: the click was the answer.
+ */
+export const LAUNCH_OFFER = {
+  heading: 'Spouštíme — máte 3 měsíce zdarma',
+  body:
+    'Teď nic neplatíte a nezadáváte žádné platební údaje. Prvním zákazníkům dáváme plný přístup ' +
+    'na 3 měsíce zdarma, abychom službu doladili podle skutečného provozu. Po třech měsících se ' +
+    `sami rozhodnete, jestli chcete pokračovat za ${PRICE}.`,
+  cta: 'Vytvořit účet a začít',
+};
+
 export const VARIANTS: LandingVariant[] = [
   {
     id: 'v1-cena',
@@ -54,8 +79,8 @@ export const VARIANTS: LandingVariant[] = [
       'Bez ručního přepisování názvů, cen a fotek',
       `Vše za ${PRICE} — méně než jedna káva`,
     ],
-    cta: 'Registrace zdarma',
-    ctaNote: `Registrace nic nestojí. Služba pak ${PRICE}.`,
+    cta: `Objednat za ${PRICE}`,
+    ctaNote: 'Bez zadávání platebních údajů.',
   },
   {
     id: 'v2-obnova',
@@ -72,8 +97,8 @@ export const VARIANTS: LandingVariant[] = [
       'Přehled o tom, co je aktivní a čemu končí platnost',
       'Nové inzeráty se připraví samy, vy je jen odsouhlasíte',
     ],
-    cta: 'Registrace zdarma',
-    ctaNote: `Registrace nic nestojí. Služba pak ${PRICE}.`,
+    cta: `Objednat za ${PRICE}`,
+    ctaNote: 'Bez zadávání platebních údajů.',
   },
   {
     id: 'v3-cas',
@@ -88,8 +113,8 @@ export const VARIANTS: LandingVariant[] = [
       'Přehled stavu všech inzerátů na jednom místě',
       'Upozornění dřív, než inzerát vyprší',
     ],
-    cta: 'Vyzkoušet',
-    ctaNote: `Registrace nic nestojí. Služba ${PRICE}.`,
+    cta: `Objednat za ${PRICE}`,
+    ctaNote: 'Bez zadávání platebních údajů.',
   },
   {
     id: 'v4-pravidla',
@@ -104,8 +129,8 @@ export const VARIANTS: LandingVariant[] = [
       'Přehled o tom, co je aktivní a co čeká na kontrolu',
       `Ověřená identita zůstává vaše. ${PRICE}.`,
     ],
-    cta: 'Registrace zdarma',
-    ctaNote: `Registrace nic nestojí. Služba pak ${PRICE}.`,
+    cta: `Objednat za ${PRICE}`,
+    ctaNote: 'Bez zadávání platebních údajů.',
   },
 ];
 

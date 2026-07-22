@@ -82,23 +82,53 @@ describe('what the copy may claim', () => {
     }
   });
 
-  it('would catch a variant that said "zdarma" with no price anywhere', () => {
-    // The rule above passes on the real variants partly because the price appears in several
-    // places. This proves the rule can actually fail, rather than being satisfied by accident.
-    const misleading = {
-      ...VARIANTS[0],
-      lede: 'Zcela zdarma.',
-      bullets: ['Zdarma'],
-      cta: 'Zdarma',
-      ctaNote: 'Zdarma',
-      h1: 'Zdarma',
-      title: 'Zdarma',
-    };
-    const html = renderLanding(misleading);
-    const saysFree = /zdarma|nic nestojí/i.test(html);
-    const statesPrice = /49\s*Kč/.test(html);
-    expect(saysFree).toBe(true);
-    expect(statesPrice).toBe(false); // …which is exactly what the rule forbids
+  it('applies a rule that can actually fail', () => {
+    // The rule passes on every real variant because the launch offer states the price, so it
+    // could be passing by construction rather than by checking anything. Run the same predicate
+    // over text that should fail it.
+    const rule = (text: string) => !/zdarma|nic nestojí/i.test(text) || /49\s*Kč/.test(text);
+
+    expect(rule('Získáte 3 měsíce zdarma, pak 49 Kč měsíčně.')).toBe(true);
+    expect(rule('Objednat za 49 Kč měsíčně')).toBe(true);
+    expect(rule('Zcela zdarma, bez závazků.')).toBe(false);
+  });
+
+  it.each(VARIANTS.map((v) => [v.id, v] as const))(
+    '%s sells on the price, never on the word "zdarma"',
+    (_id, variant) => {
+      // The question being tested is whether anyone will pay 49 Kč. Leading with "free" would
+      // measure appetite for a free thing instead — a different question with a useless answer.
+      const selling = [variant.h1, variant.lede, variant.cta, variant.ctaNote, ...variant.bullets].join(' ');
+      expect(selling).not.toMatch(/zdarma|nic nestojí/i);
+      expect(variant.cta).toMatch(/49\s*Kč/);
+    },
+  );
+
+  it('reveals the launch offer only after the priced button, and states the price in it', () => {
+    const html = renderLanding(VARIANTS[0]);
+    // Present in the markup but hidden until the click — the measurement is the click, and the
+    // offer must not be what draws it.
+    expect(html).toMatch(/<section class="offer" id="offer" hidden>/);
+    expect(html).toMatch(/3 měsíce zdarma/);
+    expect(html).toMatch(/49\s*Kč/);
+  });
+
+  it('asks for no payment details anywhere', () => {
+    // The bright line: this measures willingness to pay, it does not take payment. A field that
+    // collected card details under a button that charges nothing would be a different thing
+    // entirely from an interest test.
+    for (const [, html] of rendered) {
+      // No form fields at all — nothing on this page collects anything from anyone.
+      expect(html).not.toMatch(/<input|<form/i);
+
+      // And nothing in the visible text asks for payment credentials. Checked against the text
+      // rather than the markup, because a CSS variable named `--card` is not a card field.
+      const text = html
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ');
+      expect(text).not.toMatch(/číslo karty|platební kart|cvv|iban|kreditní/i);
+    }
   });
 
   it.each(rendered)('%s keeps the compliance notice', (_id, html) => {

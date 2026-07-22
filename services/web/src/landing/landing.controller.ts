@@ -3,7 +3,14 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { TouchpointEmitter } from './touchpoint.emitter';
-import { buildGsidCookie, buildTouchpointEnvelope, ConsentDecision, consentEvidenceFrom } from './landing';
+import {
+  buildGsidCookie,
+  buildPaymentIntentEnvelope,
+  buildTouchpointEnvelope,
+  ConsentDecision,
+  consentEvidenceFrom,
+  sessionIdFromGsidCookie,
+} from './landing';
 import { renderLanding } from './landing.assets';
 import { findVariant } from './variants';
 
@@ -107,6 +114,45 @@ export class LandingController {
       // The visitor is looking at a page. An ingestion outage degrades to a missing measurement,
       // never to a landing that does not work.
       this.logger.warn(`could not record the touchpoint: ${describe(err)}`);
+    }
+  }
+
+  /**
+   * The visitor clicked the priced button.
+   *
+   * **Nothing is charged and no payment details are asked for.** This records that someone said
+   * yes at 49 Kč — the question the whole experiment exists to answer — and the page then shows
+   * them the launch offer. Always 204: the offer must appear whether or not we managed to measure
+   * anything, and a visitor who refused consent still gets it, they are simply not counted.
+   */
+  @Post('l/intent')
+  @HttpCode(204)
+  async intent(@Body() body: ConsentBody, @Req() req: any): Promise<void> {
+    const secret = this.config.get<string>('GROWTH_GSID_HMAC_SECRET') ?? '';
+    // From the cookie, not from the page: it is HttpOnly, so the browser cannot tell us a session
+    // and cannot invent one either.
+    const sessionId = sessionIdFromGsidCookie(req?.headers?.cookie, secret);
+
+    // No verified session means no consent was given. The offer is still shown; the intent is
+    // simply not recorded, because measuring it would be measuring someone who said no.
+    if (!sessionId) return;
+
+    try {
+      await this.emitter.emit(
+        buildPaymentIntentEnvelope({
+          sessionId,
+          experimentId: this.config.get<string>('GROWTH_EXPERIMENT_ID') ?? 'unknown',
+          experimentVersion: this.config.get<string>('GROWTH_EXPERIMENT_VERSION') ?? 'unknown',
+          landingVersionId: body.landingVersionId ?? 'unknown',
+          workspaceId: this.config.get<string>('GROWTH_WORKSPACE_ID') ?? 'bazos',
+          priceValue: this.config.get<string>('GROWTH_PRICE_VALUE') ?? '49.00',
+          priceCurrency: this.config.get<string>('GROWTH_PRICE_CURRENCY') ?? 'CZK',
+          now: new Date(),
+          eventId: randomUUID(),
+        }),
+      );
+    } catch (err) {
+      this.logger.warn(`could not record the payment intent: ${describe(err)}`);
     }
   }
 }
