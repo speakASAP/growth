@@ -42,6 +42,25 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       transaction still failed with `decision_artefact is append-only (attempted DELETE)`. A
       re-enable that was never tested would be indistinguishable from one that silently failed.
 
+- [ ] **The read model ignores `supersedes_qualification_id`.**
+      `QualificationRepository.currentVerdicts()` picks a lead's current verdict with
+      `ORDER BY decided_at DESC, received_at DESC LIMIT 1` and never looks at the supersession
+      chain that C-006 §1.2 defines corrections in terms of. The field is written, indexed and
+      never read.
+
+      While deliveries arrive in decision order the answer is right, which is why the 2026-07-22
+      verification passed. It goes wrong when they do not: a redelivered or late correction, two
+      judgements sharing a `decided_at`, or a judgement that supersedes nothing arriving after a
+      correction chain — all surface a superseded judgement as current.
+
+      Found by exactly that shape during verification: a third judgement with
+      `supersedesQualificationId` absent became "current" over a correction that had superseded
+      the first. Wrong verdicts feed `costPerQualifiedLead` directly, and the error is silent.
+
+      Fix is either resolving the chain (the judgement nothing supersedes) or stating in C-006
+      that latest-by-time is the definition and `supersedes` is audit-only. It should not stay
+      ambiguous — the contract and the code currently say different things.
+
 - [ ] **Publishing the experiment screen on a public hostname — owner decision (C-006 §6.8).**
       The screen is on growth-core, which has **no ingress**, and the owner reaches it with
       `kubectl -n statex-apps port-forward deploy/growth-core 3376:3376`. It was **not** put on
