@@ -50,10 +50,15 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       click record is still taken as evidence the session existed — documented in
       `AttributionService`.
 
-- [ ] **The landing has no real content or variants yet.** `services/web` serves one page at
-      `/l/:landingVersionId` with the legal footer and the consent gate; the copy is a placeholder
-      and there is only one variant. Variant routing is the id in the URL, so adding one is a new
-      page and a new id — no code change — but the first experiment needs copy worth testing.
+- [ ] **Have a native Czech speaker read the landing copy before the budget starts.** The four
+      variants are idiomatic and grammatical to the best of my ability, but I am not a native
+      speaker and this goes in front of paid traffic under Alfares's name. One read-through is
+      cheap; a clumsy phrase in an ad people are paying to see is not.
+
+- [ ] **Decide what a registration is worth before the first experiment.** The landing sells a
+      49 Kč/month subscription, so a registration that never subscribes costs money and returns
+      nothing. The qualified-lead definition (S6) is where that gets settled, and the number
+      matters more than the copy does.
 
 - [ ] **Consent records live only in the visitor's browser.** `consentEvidence.consentRecordId` is
       minted client-side and referenced in every touchpoint, but nothing resolves it: C-005 §2.1
@@ -87,6 +92,37 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-22 — landing copy: four Czech A/B variants, live.**
+      `/l/v1-cena`, `/l/v2-obnova`, `/l/v3-cas`, `/l/v4-pravidla` — each a different argument for
+      the same product, so a result says *which reason worked*, not merely *which page won*:
+
+      | Variant | Angle |
+      |---|---|
+      | `v1-cena` | Price anchor — 49 Kč/month, led by how little it costs |
+      | `v2-obnova` | Expiry and renewal — an expired ad is invisible, and so is the loss |
+      | `v3-cas` | Time — aimed at sellers already posting by hand |
+      | `v4-pravidla` | Fear of a ban — for sellers near the limits |
+
+      ⚠️ **The placeholder had been aimed at the wrong audience** — it sold second-hand furniture
+      to buyers. `bazos-service` is a **seller's tool**: autoposting and renewing ads on Bazoš.cz,
+      49 Kč/month (`GOAL-06`).
+
+      Two claims are held by tests rather than by good intentions, because this page carries paid
+      traffic under Alfares's name:
+
+      - **Bypassing may only ever be mentioned in order to deny it.** `GOAL-06` and `BUSINESS.md`
+        are explicit that the service works *within* Bazoš's verification, limits and intervals.
+        The test accepts `neobchází` and `ne obejít`, and rejects the bare verb as a promise.
+      - **`zdarma` may appear only where 49 Kč appears too.** Registration genuinely is free and
+        the subscription genuinely is 49 Kč; the word alone beside a paid service reads differently
+        to a consumer-protection authority than to a marketer. A companion test proves that rule
+        can fail rather than passing by accident.
+
+      An unknown variant id **404s** rather than falling back to a default — serving other copy
+      under a recorded id would have the experiment comparing pages nobody saw. Verified live: all
+      four render, an unknown id 404s, `bazos.alfares.cz/` still 200, and a consent grant on
+      `v3-cas` produced a touchpoint carrying `landingVersionId: v3-cas`.
 
 - [x] **2026-07-22 — W2: the experiment landing.** `growth-web` (`services/web`, port 3377) serves
       the landing at **`bazos.alfares.cz/l/:landingVersionId`** — that host, not one of its own.
