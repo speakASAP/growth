@@ -41,9 +41,16 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       evidence the session existed, which is documented in `AttributionService`. When W2 lands,
       the orphan check belongs there.
 
-- [ ] **W5 — leads from registration** (`leads-microservice` consumes `auth.user.registered.v1`,
-      creates a `Lead`, emits `growth.lead.created_from_registration.v1`). The last producer in
-      EP-005, and unblocked since W3 started flowing.
+- [ ] **W5 — leads from registration.** The last producer in EP-005. `leads-microservice` consumes
+      `auth.user.registered.v1`, creates a `Lead`, emits `growth.lead.created_from_registration.v1`.
+
+      **Copy the pattern, do not invent one:** `src/leads/integrations/orders-order-created-broker-adapter.service.ts`
+      already consumes from RabbitMQ in that service and has a spec beside it. `amqplib` is already
+      a dependency and `npm test` runs with `--runInBand`.
+
+      Bind the queue **before** relying on it — `auth.events` is a topic exchange and discards
+      what it cannot route. `growth.auth-registrations` is growth-core's queue; leads needs its
+      own, or it will compete for the same messages and each service will see roughly half.
 
 - [ ] **`gsid_orphan` — now implementable.** W2 produces touchpoints, so growth-core can finally
       tell a verified session it *knows* from one it does not (C-005 §4). Until this lands, the
@@ -92,6 +99,33 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
 
 ## Done
+
+- [x] **2026-07-22 — priced button: the experiment measures willingness to pay, and takes no money.**
+      Owner decision: this run tests whether the service is wanted at all, so nothing is charged.
+      The button says **`Objednat za 49 Kč měsíčně`**; clicking it records
+      `growth.payment_intent.declared.v1` and reveals the launch offer — three months at no cost,
+      decide afterwards. Verified live: consent → touchpoint, click → intent carrying
+      `statedPrice 49.00 CZK` and the variant id.
+
+      **No payment details are collected.** There is no `<form>` and no `<input>` on the page, held
+      by a test. That is the line worth naming: measuring willingness to pay is an interest test;
+      collecting card details behind a button that charges nothing would be a different thing
+      entirely, and is not what this does.
+
+      `zdarma` is gone from every selling line — leading with "free" would measure appetite for a
+      free thing, which is a different question with a useless answer. The word survives only in
+      the offer revealed *after* someone has said yes to 49 Kč, where it is true.
+
+      `growth.payment_intent.declared.v1` is a **new contract event**, deliberately separate from
+      the registration event: a registration that follows a free offer is no evidence at all about
+      willingness to pay. The session comes from the HttpOnly cookie, verified — never from the
+      page, which could otherwise declare intents against somebody else's visit.
+
+      ⚠️ **Consumer-protection framing.** The offer is stated as a launch offer rather than as a
+      prize or an apology for a payment that never happened, because it is one and because the
+      measurement is complete by the time anyone reads it. Worth a look during the M0 #12 consent
+      review, together with the terms page, since the button names a price the visitor will not be
+      asked to pay.
 
 - [x] **2026-07-22 — landing copy: four Czech A/B variants, live.**
       `/l/v1-cena`, `/l/v2-obnova`, `/l/v3-cas`, `/l/v4-pravidla` — each a different argument for
