@@ -55,7 +55,15 @@ export class LandingController {
   // follow must never be able to grant it.
   @Post('l/consent')
   @HttpCode(204)
-  async consent(@Body() body: ConsentBody, @Req() _req: any, @Res() res: any): Promise<void> {
+  // `passthrough: true` matters: with a bare @Res() Nest hands the response over entirely and
+  // this method would have to end it itself. It sets a header and returns, so without passthrough
+  // the request hangs until the edge times out — which is exactly what happened on first deploy,
+  // and no unit test could see it because they call this method with a fake response object.
+  async consent(
+    @Body() body: ConsentBody,
+    @Req() _req: any,
+    @Res({ passthrough: true }) res: any,
+  ): Promise<void> {
     const decision = body?.decision;
 
     // Absent, malformed, or necessary-only all mean the same thing: do not collect. The safe
