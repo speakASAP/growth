@@ -159,7 +159,19 @@ Five bounded workstreams. No two touch the same file.
 > defect — the join still links a registration to a click, it just has no ad touchpoint to
 > attribute it to until the landing runtime lands.
 
-### W5 — `leads-microservice` lead from registration
+### W5 — `leads-microservice` lead from registration ✅ **done 2026-07-22**
+
+> Consumes `auth.user.registered.v1` on its **own** queue `leads.auth.user-registered.v1`, creates
+> a `Lead`, and announces `growth.lead.created_from_registration.v1` on `leads.events`. Verified
+> live end to end: a registration produced exactly one lead and one event carrying the
+> `correlationId` from the landing.
+>
+> `Lead.authUserId` is unique, so one registration produces one lead however many times the broker
+> delivers it. A failed announcement does not roll back the lead.
+>
+> **All five workers of S5 are now complete.**
+
+### W5 — original scope
 
 | | |
 |---|---|
@@ -193,7 +205,7 @@ Contracts first, then producers, then consumers, then read models — the standa
 2. W1  growth-core ingestion + buffer   ✅ done 2026-07-20, drains to growth.events (W6)
 3. W4  bazos gsid pass-through          ✅ done 2026-07-21, live on growth.events
 4. W2  growth-web landing               ✅ done 2026-07-22, bazos.alfares.cz/l
-5. W5  leads from registration          ← LAST ONE. W3 is flowing, so this is unblocked
+5. W5  leads from registration          ✅ done 2026-07-22, live on leads.events
 ```
 
 **Both halves of the join now exist in production and nothing joins them.** That is the next piece

@@ -41,16 +41,16 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       evidence the session existed, which is documented in `AttributionService`. When W2 lands,
       the orphan check belongs there.
 
-- [ ] **W5 — leads from registration.** The last producer in EP-005. `leads-microservice` consumes
-      `auth.user.registered.v1`, creates a `Lead`, emits `growth.lead.created_from_registration.v1`.
+- [ ] **`growth-core` does not consume `leads.events` yet.** W5 announces
+      `growth.lead.created_from_registration.v1`, and the durable queue `growth.lead-created` is
+      already bound so nothing is lost — but the lead is not yet joined to its touchpoint. That
+      belongs with **S6**, where qualification anchors on the lead.
 
-      **Copy the pattern, do not invent one:** `src/leads/integrations/orders-order-created-broker-adapter.service.ts`
-      already consumes from RabbitMQ in that service and has a spec beside it. `amqplib` is already
-      a dependency and `npm test` runs with `--runInBand`.
-
-      Bind the queue **before** relying on it — `auth.events` is a topic exchange and discards
-      what it cannot route. `growth.auth-registrations` is growth-core's queue; leads needs its
-      own, or it will compete for the same messages and each service will see roughly half.
+- [ ] **`leads-microservice`'s orders consumer has never run.**
+      `LEADS_ORDERS_EVENTS_CONSUMER_ENABLED=true` in the configmap, but
+      `LEADS_ORDERS_EVENTS_RABBITMQ_URL` is set nowhere, so the adapter logs that it is disabled
+      and returns. Pre-existing and unrelated to W5, which uses its own variable and is
+      unaffected — found while adding the auth consumer. Worth deciding whether it is wanted.
 
 - [ ] **`gsid_orphan` — now implementable.** W2 produces touchpoints, so growth-core can finally
       tell a verified session it *knows* from one it does not (C-005 §4). Until this lands, the
