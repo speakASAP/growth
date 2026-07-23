@@ -167,15 +167,6 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       delete transaction, re-enabled in the same statement, exactly as 2026-07-22). Trigger
       re-verified enabled afterwards: `pg_trigger.tgenabled = 'O'`.
 
-- [ ] **`s1a-verify.sh` can poison the real experiment's launch slot — fix before it is run again.**
-      Two root causes surfaced above. (a) The script defaults to `EXPERIMENT_ID=exp-001`, the real
-      first experiment — a verification run should default to a throwaway id (`exp-verify-*`, as the
-      2026-07-22 run used) so the real experiment's append-only history is never spent on a test.
-      (b) The `edit` probe will silently *create* the launch artefact if run before `launch`,
-      writing its sentinel text as canonical — the probe steps must refuse to be the first write of
-      an id (e.g. require the launch to already exist, or use a `If-Match`/precondition). Either
-      fix alone prevents a repeat; do both.
-
 - [x] **Money format — resolved in `s1a-verify.sh`, contract deliberately left permissive
       (2026-07-23).** The chain had mixed `"1100"` and `"1000.00"`. Decision: **C-001 is not
       changed.** The schema already accepts an integer (`^\d+(\.\d{1,4})?$`) and the server compares
@@ -210,16 +201,21 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       forever. Neither is wrong at this volume, but a real DLQ is the follow-up — the same gap
       `auth-microservice` has on the producing side.
 
-- [ ] **`gsid_orphan` is not implemented.** C-005 §4 distinguishes a verified session growth-core
-      *knows* from one it does not, and only the former should link. Touchpoints — the thing that
-      makes a session known — arrive with W2. Until then the click record itself is taken as
-      evidence the session existed, which is documented in `AttributionService`. When W2 lands,
-      the orphan check belongs there.
+- [ ] **`gsid_orphan` is not implemented — and is now unblocked.** C-005 §4 distinguishes a
+      verified session growth-core *knows* from one it does not, and only the former should link.
+      Touchpoints are what make a session known, and W2 produces them in production, so the check
+      that was waiting on W2 can be written. Until it lands the click record itself is taken as
+      evidence the session existed — documented in `AttributionService` (`attribution.service.ts:43`),
+      where the orphan check belongs.
 
-- [ ] **`growth-core` does not consume `leads.events` yet.** W5 announces
-      `growth.lead.created_from_registration.v1`, and the durable queue `growth.lead-created` is
-      already bound so nothing is lost — but the lead is not yet joined to its touchpoint. That
-      belongs with **S6**, where qualification anchors on the lead.
+      (Merged 2026-07-23 — this stood as two entries, one written before W2 and one after, which
+      read as two pieces of work and are one.)
+
+- [x] **`growth-core` consumes `leads.events` — done with S6, 2026-07-22.** Both
+      `growth.lead-created` and `growth.lead-qualification` are declared **and** bound by the
+      consumer on boot, and the full chain was proven in production: a lead from the real landing
+      reaches `qualification.lead`, a verdict from the admin panel reaches
+      `qualification.lead_qualification`.
 
 - [ ] **`leads-microservice`'s orders consumer has never run.**
       `LEADS_ORDERS_EVENTS_CONSUMER_ENABLED=true` in the configmap, but
@@ -227,15 +223,11 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       and returns. Pre-existing and unrelated to W5, which uses its own variable and is
       unaffected — found while adding the auth consumer. Worth deciding whether it is wanted.
 
-- [ ] **`gsid_orphan` — now implementable.** W2 produces touchpoints, so growth-core can finally
-      tell a verified session it *knows* from one it does not (C-005 §4). Until this lands, the
-      click record is still taken as evidence the session existed — documented in
-      `AttributionService`.
-
-- [ ] **Have a native Czech speaker read the landing copy before the budget starts.** The four
-      variants are idiomatic and grammatical to the best of my ability, but I am not a native
-      speaker and this goes in front of paid traffic under Alfares's name. One read-through is
-      cheap; a clumsy phrase in an ad people are paying to see is not.
+- [x] **Native Czech speaker read the landing copy — DONE 2026-07-23, text approved.** The four
+      variants went in front of a native speaker before any paid traffic, as required, and were
+      approved. The concern was never grammar in the abstract: this copy runs under Alfares's name
+      in front of people who are paying to see it, and a clumsy phrase there costs money and
+      reputation at the same time. Cleared to run.
 
 - [ ] **Decide what a registration is worth before the first experiment.** The landing sells a
       49 Kč/month subscription, so a registration that never subscribes costs money and returns
@@ -294,9 +286,12 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       and cabinet-on-port-forward — in favour of a real login. Consequence, stated rather than
       discovered later: S1b sits at **M3**, so the cabinet arrives at M3 and the CLI stays the way
       decisions are written until then.
-- [ ] **S5 — `services/web/`** brings the first public surface. The ingress arrives with it and
-      must route `growth.alfares.cz/` to `growth-web` only; `growth-core` stays off the public
-      routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
+- [x] **S5 — `services/web/` shipped and is live** (entry corrected 2026-07-23; it sat under
+      "Later" describing work that was already in production). The ingress arrived with it, and on
+      a **different host than this entry predicted**: `bazos.alfares.cz/l`, not `growth.alfares.cz`.
+      That is not a detail — the `gsid` cookie is scoped `Domain=bazos.alfares.cz` so
+      `bazos-service` can read it, and any other host leaves attribution permanently empty while
+      health checks stay green (D-005). `growth-core` is still on no ingress at all.
 
 ## Done
 
