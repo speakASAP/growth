@@ -1,5 +1,5 @@
 {
-  "stage": "S6 deployed and verified in production; S6b (experiment report) deployed and verified. Read-model correctness fix (supersession chain, commit 181529b) COMMITTED BUT NOT YET DEPLOYED — the running image is d16cd8a-wt20260722144309, which predates it, so the live report still ranks verdicts by decided_at.",
+  "stage": "S6 deployed and verified in production; S6b (experiment report) deployed and verified. Read-model correctness fix (supersession chain, commit 181529b) COMMITTED BUT NOT YET DEPLOYED — the running image is d16cd8a-wt20260722144309, which predates it, so the live report still ranks verdicts by decided_at. Owner decision 2026-07-23: it waits and ships in the same rollout as S6d, because the deploy's docker context is the working tree (deploy.config.sh:17) and S6d was mid-flight there — uncommitted migration 007 that the migrate init container would have applied to the production database, and services/web/src momentarily empty. Whoever deploys S6d closes this; confirm with grep 'WITH RECURSIVE' dist/qualification/qualification.repository.js inside the pod.",
   "health": "ok",
   "deployed": "S5 yes. S6 yes — deployed 2026-07-22, migration 006 applied in production, and all four write/consume paths exercised against real services. S6b (read API + owner screen) deployed 2026-07-22.",
   "slice": "S6b",

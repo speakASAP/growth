@@ -67,7 +67,21 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       ambiguity is closed rather than left to the reader: **C-006 §1.4** now defines the current
       verdict as the head of the chain, so the contract and the code say the same thing.
 
-      **Not deployed** — `growth-core` needs a rebuild and rollout before the report changes.
+      **NOT DEPLOYED — deliberately, owner decision 2026-07-23.** The running image is
+      `growth-core:d16cd8a-wt20260722144309`, built from a commit that predates the fix; the live
+      report still ranks verdicts by `decided_at`. Verified rather than assumed:
+      `grep 'WITH RECURSIVE' dist/qualification/qualification.repository.js` inside the running
+      container returns 0.
+
+      It waits for **S6d** and ships in the same rollout. The reason is the build, not caution: the
+      deploy's Docker context is the repo **working tree**, not git (`deploy.config.sh:17`), and S6d
+      was mid-flight in that tree — `migrations/007_touchpoint_and_campaign.sql` uncommitted (it
+      creates `attribution.touchpoint` and alters `spend.manual_observation`, and the migrate init
+      container would have applied it to the production database), and `services/web/src` momentarily
+      empty during a restructure, which would have built `growth-web` from nothing.
+
+      **Whoever deploys S6d closes this line too.** Confirm afterwards with the `grep` above
+      returning 1, not by reading this entry.
 
 - [ ] **Publishing the experiment screen on a public hostname — DECIDED by the owner 2026-07-23
       (C-006 §6.8).** The screen is on growth-core, which has **no ingress**, and the owner reaches
