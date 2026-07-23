@@ -15,10 +15,15 @@
 #   ./scripts/s1a-verify.sh stop-bare                  # step 4 — must be refused
 #   ./scripts/s1a-verify.sh stop    "<reason>"         # step 6
 #   ./scripts/s1a-verify.sh story                      # read the chain back
+#
+# This writes to a THROWAWAY experiment id by default (exp-verify-<UTC date>), never the real
+# exp-001 — a verification run must not spend the first experiment's append-only history on a test.
+# All steps run the same day share that id, so re-running a step is a duplicate as designed; a
+# different day gets a clean slate. To exercise a real experiment, set EXPERIMENT_ID explicitly.
 set -euo pipefail
 
 NS=statex-apps
-EXPERIMENT="${EXPERIMENT_ID:-exp-001}"
+EXPERIMENT="${EXPERIMENT_ID:-exp-verify-$(date -u +%Y%m%d)}"
 VERSION="${EXPERIMENT_VERSION:-v1}"
 WORKSPACE="${WORKSPACE_ID:-bazos}"
 WHO="${DECIDED_BY:-ssf}"
@@ -47,6 +52,24 @@ money() {
     *.*) local i="${1%.*}" f="${1#*.}"; while [ "${#f}" -lt 2 ]; do f="${f}0"; done; printf '%s.%s' "$i" "$f" ;;
     *)   printf '%s.00' "$1" ;;
   esac
+}
+
+# Exit 0 iff a launch artefact already exists for this experiment/version. Used to stop the `edit`
+# probe from being the FIRST write of the launch id: that id is deterministic, so an edit run before
+# launch would create the artefact carrying its sentinel text as canonical — the exact incident of
+# 2026-07-23. Exit 2 (query failed) is treated as "cannot confirm", and the probe refuses too.
+launch_exists() {
+  kubectl -n "$NS" exec deploy/growth-core -c app -- node -e '
+    const http = require("http");
+    const [path, id] = process.argv.slice(1);
+    http.get({ host: "localhost", port: 3376, path }, (res) => {
+      let d = ""; res.on("data", (c) => (d += c));
+      res.on("end", () => {
+        try { const a = JSON.parse(d); process.exit(Array.isArray(a) && a.some((x) => x.decisionArtefactId === id) ? 0 : 1); }
+        catch { process.exit(2); }
+      });
+    }).on("error", () => process.exit(2));
+  ' "/governance/decisions?experimentId=$EXPERIMENT&experimentVersion=$VERSION" "$LAUNCH_ID"
 }
 
 call() { # method path [body]
@@ -111,6 +134,14 @@ case "${1:-}" in
     echo "── step 2: attempt an edit — MUST be refused"
     echo "   Re-submitting the same id with different words. A 200 'duplicate' is not an edit:"
     echo "   the stored artefact must still carry the ORIGINAL hypothesis. Check with 'story'."
+    if [ -z "${DRY_RUN:-}" ] && ! launch_exists; then
+      echo >&2
+      echo "   REFUSED: no launch artefact exists yet for $EXPERIMENT/$VERSION." >&2
+      echo "   The edit probe must never be the FIRST write of this id — run 'launch' first." >&2
+      echo "   Otherwise this sentinel text would BECOME the canonical launch (the 2026-07-23" >&2
+      echo "   incident). Nothing was sent. See TASKS.md." >&2
+      exit 1
+    fi
     call POST /governance/decisions "{
       $(common),
       \"decisionArtefactId\": \"$LAUNCH_ID\",
