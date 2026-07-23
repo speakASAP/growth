@@ -32,10 +32,37 @@ interface ConsentBody {
 export class LandingController {
   private readonly logger = new Logger(LandingController.name);
 
+  /**
+   * The experiment this deployment serves, resolved **once, at construction** (S6d, F-007).
+   *
+   * These two used to fall back to the literal string `'unknown'`. Since S6d a lead's experiment is
+   * derived from its touchpoint, so that fallback stopped being a cosmetic default and became a
+   * measurement that looks like data: `'unknown'` joins, counts and reports, and a real
+   * experiment's spend would be divided by leads credited to an experiment that does not exist.
+   *
+   * Resolved here rather than per request on purpose. A missing variable must fail the **pod**, so
+   * a deploy that forgot the ConfigMap never starts serving; throwing inside a request handler
+   * would instead break the page for a visitor, and a landing that 500s over a measurement problem
+   * is the trade this service refuses everywhere else.
+   */
+  private readonly experimentId: string;
+  private readonly experimentVersion: string;
+
   constructor(
     private readonly emitter: TouchpointEmitter,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    this.experimentId = this.required('GROWTH_EXPERIMENT_ID');
+    this.experimentVersion = this.required('GROWTH_EXPERIMENT_VERSION');
+  }
+
+  private required(key: string): string {
+    const value = this.config.get<string>(key)?.trim();
+    if (!value) {
+      throw new Error(`[MISSING: ${key}] — the landing cannot record which experiment it is serving`);
+    }
+    return value;
+  }
 
   @Get('health')
   health() {
@@ -99,8 +126,8 @@ export class LandingController {
       await this.emitter.emit(
         buildTouchpointEnvelope({
           sessionId,
-          experimentId: this.config.get<string>('GROWTH_EXPERIMENT_ID') ?? 'unknown',
-          experimentVersion: this.config.get<string>('GROWTH_EXPERIMENT_VERSION') ?? 'unknown',
+          experimentId: this.experimentId,
+          experimentVersion: this.experimentVersion,
           landingVersionId: body.landingVersionId ?? 'unknown',
           workspaceId: this.config.get<string>('GROWTH_WORKSPACE_ID') ?? 'bazos',
           query: body.query ?? {},
@@ -141,8 +168,8 @@ export class LandingController {
       await this.emitter.emit(
         buildPaymentIntentEnvelope({
           sessionId,
-          experimentId: this.config.get<string>('GROWTH_EXPERIMENT_ID') ?? 'unknown',
-          experimentVersion: this.config.get<string>('GROWTH_EXPERIMENT_VERSION') ?? 'unknown',
+          experimentId: this.experimentId,
+          experimentVersion: this.experimentVersion,
           landingVersionId: body.landingVersionId ?? 'unknown',
           workspaceId: this.config.get<string>('GROWTH_WORKSPACE_ID') ?? 'bazos',
           priceValue: this.config.get<string>('GROWTH_PRICE_VALUE') ?? '49.00',

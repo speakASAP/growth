@@ -4,6 +4,8 @@ import { DatabaseService } from '../db/database.service';
 export interface ObservationRecord {
   observationId: string;
   experimentId: string;
+  /** null = the owner did not split this figure by campaign (C-006 §2.5). Never blank. */
+  campaignId: string | null;
   workspaceId: string;
   platform: string;
   periodStart: string;
@@ -40,8 +42,8 @@ export class SpendRepository {
     const { rowCount } = await this.db.query(
       `INSERT INTO spend.manual_observation
          (observation_id, experiment_id, workspace_id, platform, period_start, period_end,
-          amount_value, amount_currency, evidence_reference, entered_by, entered_at)
-       VALUES ($1,$2,$3,$4,$5::date,$6::date,$7::numeric,$8,$9,$10,$11)
+          amount_value, amount_currency, evidence_reference, entered_by, entered_at, campaign_id)
+       VALUES ($1,$2,$3,$4,$5::date,$6::date,$7::numeric,$8,$9,$10,$11,$12)
        ON CONFLICT (observation_id) DO NOTHING`,
       [
         record.observationId,
@@ -55,6 +57,7 @@ export class SpendRepository {
         record.evidenceReference,
         record.enteredBy,
         record.enteredAt,
+        record.campaignId,
       ],
     );
 
@@ -72,6 +75,10 @@ export class SpendRepository {
       existing.platform === record.platform &&
       existing.periodStart === record.periodStart &&
       existing.periodEnd === record.periodEnd &&
+      // Part of the identity comparison, not decoration: the same id resubmitted against a
+      // different campaign is a changed body, and answering 200 to it would leave the stored
+      // split disagreeing with what the owner believes he entered.
+      existing.campaignId === record.campaignId &&
       // Compared as NUMERIC by the database rather than as text: '15000.00' and '15000.0000' are
       // the same amount of money, and a string comparison would call that a conflict.
       existing.amountEqualsChecked &&
@@ -100,7 +107,7 @@ export class SpendRepository {
               to_char(period_start, 'YYYY-MM-DD') AS period_start,
               to_char(period_end,   'YYYY-MM-DD') AS period_end,
               amount_value::text                  AS amount_value,
-              amount_currency, evidence_reference, entered_by, entered_at,
+              amount_currency, evidence_reference, entered_by, entered_at, campaign_id,
               (amount_value = $2::numeric)        AS amount_equals
          FROM spend.manual_observation
         WHERE observation_id = $1`,
@@ -113,6 +120,7 @@ export class SpendRepository {
     return {
       observationId: row.observation_id as string,
       experimentId: row.experiment_id as string,
+      campaignId: (row.campaign_id as string | null) ?? null,
       workspaceId: row.workspace_id as string,
       platform: row.platform as string,
       periodStart: row.period_start as string,
@@ -133,7 +141,7 @@ export class SpendRepository {
               to_char(period_start, 'YYYY-MM-DD') AS period_start,
               to_char(period_end,   'YYYY-MM-DD') AS period_end,
               amount_value::text                  AS amount_value,
-              amount_currency, evidence_reference, entered_by, entered_at
+              amount_currency, evidence_reference, entered_by, entered_at, campaign_id
          FROM spend.manual_observation
         WHERE experiment_id = $1
           AND superseded_by_observation_id IS NULL
@@ -144,6 +152,7 @@ export class SpendRepository {
     return rows.map((row) => ({
       observationId: row.observation_id,
       experimentId: row.experiment_id,
+      campaignId: row.campaign_id ?? null,
       workspaceId: row.workspace_id,
       platform: row.platform,
       periodStart: row.period_start,

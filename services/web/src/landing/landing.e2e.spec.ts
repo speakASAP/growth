@@ -19,6 +19,10 @@ const emitted: unknown[] = [];
 beforeAll(async () => {
   process.env.GROWTH_GSID_HMAC_SECRET = 'test-secret';
   process.env.GROWTH_WORKSPACE_ID = 'bazos';
+  // Required since S6d: the controller refuses to construct without them, because a landing that
+  // cannot say which experiment it serves records touchpoints nothing can attribute (F-007).
+  process.env.GROWTH_EXPERIMENT_ID = 'exp-001';
+  process.env.GROWTH_EXPERIMENT_VERSION = 'v1';
 
   const moduleRef = await Test.createTestingModule({
     imports: [ConfigModule.forRoot({ isGlobal: true }), LandingModule],

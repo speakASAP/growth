@@ -14,6 +14,21 @@ interface RedirectEnvelope {
   };
 }
 
+interface TouchpointEnvelope {
+  eventId: string;
+  workspaceId: string;
+  occurredAt: string;
+  payload: {
+    sessionId: string;
+    experimentId: string;
+    experimentVersion: string;
+    landingVersionId: string;
+    gclid?: string;
+    utm?: { campaign?: string };
+    consentEvidence: { statusAtEventTime: string };
+  };
+}
+
 interface RegistrationEnvelope {
   correlationId: string;
   payload: {
@@ -79,6 +94,30 @@ export class AttributionService {
     });
 
     await this.link(correlationId);
+  }
+
+  /**
+   * C-006 §4.3 — stores the landing view so a lead's experiment can be derived later.
+   *
+   * Nothing is joined here. A touchpoint arrives before the click and long before the lead, so
+   * resolving anything at this point would resolve it against facts that have not happened yet;
+   * the report walks session → experiment at read time instead (C-006 §6.6).
+   */
+  async onTouchpoint(envelope: TouchpointEnvelope): Promise<void> {
+    const p = envelope.payload;
+
+    await this.repository.saveTouchpoint({
+      touchpointId: envelope.eventId,
+      sessionId: p.sessionId,
+      workspaceId: envelope.workspaceId,
+      experimentId: p.experimentId,
+      experimentVersion: p.experimentVersion,
+      landingVersionId: p.landingVersionId,
+      utmCampaign: p.utm?.campaign ?? null,
+      gclid: p.gclid ?? null,
+      consentStatus: p.consentEvidence.statusAtEventTime,
+      occurredAt: envelope.occurredAt,
+    });
   }
 
   async onUserRegistered(envelope: RegistrationEnvelope): Promise<void> {

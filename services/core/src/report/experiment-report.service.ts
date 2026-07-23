@@ -2,7 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { QualificationRepository } from '../qualification/qualification.repository';
 import { SpendRepository } from '../spend/spend.repository';
-import { divideToScale2, sumDecimalStrings } from './money';
+import type { ObservationRecord } from '../spend/spend.repository';
+import { compareDecimalStrings, divideToScale2, sumDecimalStrings } from './money';
+
+export interface CampaignSpend {
+  /** null = the owner did not split this figure. Never merged into a named campaign (C-006 §2.5). */
+  campaignId: string | null;
+  total: string;
+  observations: number;
+}
 
 export interface ExperimentReport {
   experimentId: string;
@@ -13,8 +21,13 @@ export interface ExperimentReport {
     total: string | null;
     observations: number;
     mixedCurrency: boolean;
+    byCampaign: CampaignSpend[];
   };
   registrations: number;
+  outOfScope: {
+    otherExperiments: number;
+    noTouchpoint: number;
+  };
   attribution: {
     attributed: number;
     unattributed: number;
@@ -47,13 +60,23 @@ export class ExperimentReportService {
   async build(experimentId: string): Promise<ExperimentReport> {
     const workspaceId = this.config.get<string>('GROWTH_WORKSPACE_ID') ?? 'bazos';
 
-    // Verdicts are scoped by workspace and spend by experiment, because `qualification.lead` has
-    // no experiment dimension. Correct while one experiment runs per workspace, wrong the moment
-    // a second does — flagged in C-006 §6.6 rather than hidden.
-    const [verdicts, observations] = await Promise.all([
+    // Verdicts arrive scoped by workspace and carrying the experiment each lead came from, which
+    // is derived at read time from the touchpoint the click walked back to (C-006 §6.6). Spend is
+    // keyed by experiment directly.
+    const [allVerdicts, observations] = await Promise.all([
       this.qualification.currentVerdicts(workspaceId),
       this.spend.listForExperiment(experimentId),
     ]);
+
+    // Three buckets, and the two that are not counted are reported rather than dropped. Leads on
+    // another experiment are somebody else's numerator; leads with no touchpoint are real
+    // registrations whose origin cannot be established, and excluding them makes THIS experiment
+    // read worse than reality — the same direction the unattributed split already reads (§6.6).
+    const verdicts = allVerdicts.filter((row) => row.experimentId === experimentId);
+    const otherExperiments = allVerdicts.filter(
+      (row) => row.experimentId !== null && row.experimentId !== experimentId,
+    ).length;
+    const noTouchpoint = allVerdicts.filter((row) => row.experimentId === null).length;
 
     const currencies = new Set(observations.map((o) => o.amountCurrency));
     const mixedCurrency = currencies.size > 1;
@@ -78,8 +101,12 @@ export class ExperimentReportService {
         total,
         observations: observations.length,
         mixedCurrency,
+        // Suppressed on mixed currency for the same reason the total is: a per-campaign figure
+        // adding CZK to EUR is wrong and looks fine (§6.4).
+        byCampaign: mixedCurrency ? [] : summariseCampaigns(observations),
       },
       registrations,
+      outOfScope: { otherExperiments, noTouchpoint },
       attribution: {
         attributed,
         // Never derived by subtraction elsewhere and never omitted: consent refusal means these
@@ -98,4 +125,37 @@ export class ExperimentReportService {
       costPerQualifiedLead: divideToScale2(total, count('qualified')),
     };
   }
+}
+
+/**
+ * Spend per campaign, with unassigned spend as its own line (C-006 §2.5).
+ *
+ * Unassigned is never folded into a named campaign and never dropped: the money left the account
+ * whether or not the owner split the figure, and the experiment's total is the sum of every line
+ * here. Ordered by size so the campaign that spent the most reads first, then by id so two equal
+ * totals do not swap places between reads.
+ */
+function summariseCampaigns(observations: ObservationRecord[]): CampaignSpend[] {
+  const groups = new Map<string, ObservationRecord[]>();
+
+  for (const observation of observations) {
+    // The empty string is not a possible campaignId — the schema and the column check both reject
+    // a blank one — so it is safe as the key for "no campaign".
+    const key = observation.campaignId ?? '';
+    const group = groups.get(key);
+    if (group) group.push(observation);
+    else groups.set(key, [observation]);
+  }
+
+  return [...groups.entries()]
+    .map(([key, rows]) => ({
+      campaignId: key === '' ? null : key,
+      total: sumDecimalStrings(rows.map((row) => row.amountValue)) as string,
+      observations: rows.length,
+    }))
+    .sort(
+      (a, b) =>
+        compareDecimalStrings(b.total, a.total) ||
+        (a.campaignId ?? '').localeCompare(b.campaignId ?? ''),
+    );
 }

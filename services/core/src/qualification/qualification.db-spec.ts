@@ -37,7 +37,9 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await client.query('TRUNCATE qualification.lead_qualification, qualification.lead');
-  await client.query('TRUNCATE attribution.identity_link, attribution.registration, attribution.auth_redirect');
+  await client.query(
+    'TRUNCATE attribution.identity_link, attribution.registration, attribution.auth_redirect, attribution.touchpoint',
+  );
 });
 
 const lead = (leadId: string, correlationId: string | null = null, userId = `user-${leadId}`) => ({
@@ -118,7 +120,11 @@ describe('the current verdict', () => {
     await repository.saveLead(lead('lead-1'));
 
     const verdicts = await repository.currentVerdicts('bazos');
-    expect(verdicts).toEqual([{ leadId: 'lead-1', verdict: 'pending', attributed: false }]);
+    // experimentId is null: this lead has no correlationId, so there is no click to walk back to
+    // a landing view. Counted separately by the report, never against an experiment (C-006 §6.6).
+    expect(verdicts).toEqual([
+      { leadId: 'lead-1', verdict: 'pending', attributed: false, experimentId: null },
+    ]);
   });
 
   it('reports the latest judgement, not the first', async () => {
@@ -293,5 +299,120 @@ describe('the runtime role cannot rewrite a judgement', () => {
     await expect(
       runtime.query(`UPDATE qualification.lead SET source_service = 'x' WHERE lead_id = 'lead-1'`),
     ).resolves.toBeDefined();
+  });
+});
+
+
+/**
+ * C-006 §6.6 — the experiment a lead came from, derived rather than stored.
+ *
+ * Every case here is a shape the old workspace-wide count answered wrongly and silently: it
+ * credited one experiment's spend with another's leads, and with leads that never passed a landing
+ * page at all.
+ */
+describe('the experiment a lead came from', () => {
+  const click = async (correlationId: string, sessionId: string, initiatedAt: string) => {
+    await client.query(
+      `INSERT INTO attribution.auth_redirect
+         (correlation_id, workspace_id, session_id, gsid_status, initiated_at)
+       VALUES ($1,'bazos',$2,'valid',$3)`,
+      [correlationId, sessionId, initiatedAt],
+    );
+  };
+
+  const touchpoint = async (
+    id: string,
+    sessionId: string,
+    experimentId: string,
+    occurredAt: string,
+  ) => {
+    await client.query(
+      `INSERT INTO attribution.touchpoint
+         (touchpoint_id, session_id, workspace_id, experiment_id, experiment_version,
+          landing_version_id, consent_status, occurred_at)
+       VALUES ($1,$2,'bazos',$3,'v1','v1-cena','granted',$4)`,
+      [id, sessionId, experimentId, occurredAt],
+    );
+  };
+
+  it('walks lead → click → touchpoint and reports the experiment', async () => {
+    await repository.saveLead(lead('lead-1', 'corr-1'));
+    await click('corr-1', 'session-1', '2026-07-22T10:00:00.000Z');
+    await touchpoint('tp-1', 'session-1', 'exp-001', '2026-07-22T09:59:00.000Z');
+
+    const [row] = await repository.currentVerdicts('bazos');
+    expect(row.experimentId).toBe('exp-001');
+  });
+
+  it('reports null for a lead that never passed a landing page', async () => {
+    // A direct signup. Null is the honest answer; the report counts it separately rather than
+    // crediting it to whichever experiment is being looked at.
+    await repository.saveLead(lead('lead-1', null));
+
+    const [row] = await repository.currentVerdicts('bazos');
+    expect(row.experimentId).toBeNull();
+  });
+
+  it('reports null when the click exists but no touchpoint was ever recorded', async () => {
+    // Refused consent, a cleared cookie, or a lead that predates the touchpoint table.
+    await repository.saveLead(lead('lead-1', 'corr-1'));
+    await click('corr-1', 'session-1', '2026-07-22T10:00:00.000Z');
+
+    const [row] = await repository.currentVerdicts('bazos');
+    expect(row.experimentId).toBeNull();
+  });
+
+  it('keeps two leads on two experiments apart', async () => {
+    await repository.saveLead(lead('lead-1', 'corr-1'));
+    await click('corr-1', 'session-1', '2026-07-22T10:00:00.000Z');
+    await touchpoint('tp-1', 'session-1', 'exp-001', '2026-07-22T09:00:00.000Z');
+
+    await repository.saveLead(lead('lead-2', 'corr-2'));
+    await click('corr-2', 'session-2', '2026-08-01T10:00:00.000Z');
+    await touchpoint('tp-2', 'session-2', 'exp-002', '2026-08-01T09:00:00.000Z');
+
+    const rows = await repository.currentVerdicts('bazos');
+    const byLead = Object.fromEntries(rows.map((r) => [r.leadId, r.experimentId]));
+    expect(byLead).toEqual({ 'lead-1': 'exp-001', 'lead-2': 'exp-002' });
+  });
+
+  it('uses the view that led to the click, not the session\'s latest view', async () => {
+    // The visitor registered under exp-001, then came back weeks later and saw the exp-002
+    // landing with the same cookie. Ordering by "latest touchpoint" would move an already
+    // registered lead to exp-002 and make the new experiment look like it converted him.
+    await repository.saveLead(lead('lead-1', 'corr-1'));
+    await click('corr-1', 'session-1', '2026-07-22T10:00:00.000Z');
+    await touchpoint('tp-1', 'session-1', 'exp-001', '2026-07-22T09:00:00.000Z');
+    await touchpoint('tp-2', 'session-1', 'exp-002', '2026-08-15T09:00:00.000Z');
+
+    const [row] = await repository.currentVerdicts('bazos');
+    expect(row.experimentId).toBe('exp-001');
+  });
+
+  it('falls back to the nearest later view when nothing precedes the click', async () => {
+    // Clock skew between two services, not a later visit: the only recorded view is milliseconds
+    // after the click. Answering null there would throw away a lead we can actually place.
+    await repository.saveLead(lead('lead-1', 'corr-1'));
+    await click('corr-1', 'session-1', '2026-07-22T10:00:00.000Z');
+    await touchpoint('tp-late', 'session-1', 'exp-001', '2026-07-22T10:00:00.500Z');
+    await touchpoint('tp-later', 'session-1', 'exp-002', '2026-07-22T18:00:00.000Z');
+
+    const [row] = await repository.currentVerdicts('bazos');
+    expect(row.experimentId).toBe('exp-001');
+  });
+
+  it('does not attribute through a click whose gsid did not verify', async () => {
+    // A forged token stores no session id, so there is nothing to join on. The lead stays real
+    // and stays uncounted for the experiment — the forgery costs attribution, not the conversion.
+    await repository.saveLead(lead('lead-1', 'corr-1'));
+    await client.query(
+      `INSERT INTO attribution.auth_redirect
+         (correlation_id, workspace_id, session_id, gsid_status, initiated_at)
+       VALUES ('corr-1','bazos',NULL,'forged','2026-07-22T10:00:00.000Z')`,
+    );
+    await touchpoint('tp-1', 'session-1', 'exp-001', '2026-07-22T09:00:00.000Z');
+
+    const [row] = await repository.currentVerdicts('bazos');
+    expect(row.experimentId).toBeNull();
   });
 });

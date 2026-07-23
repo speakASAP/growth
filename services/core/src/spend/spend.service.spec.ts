@@ -62,7 +62,8 @@ describe('recording a manual spend observation', () => {
     await service.record(payload, 'bazos');
 
     const envelope = buffered[0] as Record<string, unknown>;
-    expect(envelope.eventType).toBe('growth.spend.observed_manual.v1');
+    expect(envelope.eventType).toBe('growth.spend.observed_manual.v2');
+    expect(envelope.eventVersion).toBe(2);
     expect(envelope.producer).toBe('growth-core');
     expect(envelope.dataClass).toBe('operational');
     expect(envelope.workspaceId).toBe('bazos');
@@ -151,5 +152,45 @@ describe('money stays a decimal string', () => {
     const envelope = buffered[0] as { payload: { amount: { value: unknown } } };
     expect(typeof envelope.payload.amount.value).toBe('string');
     expect(envelope.payload.amount.value).toBe('0.0001');
+  });
+});
+
+
+/**
+ * C-006 §2.5 — the campaign dimension.
+ *
+ * The point of a version bump rather than a quiet field addition is that the two versions can be
+ * told apart by a validator. These pin exactly that, from both sides.
+ */
+describe('the campaign dimension', () => {
+  it('carries campaignId through to the stored row and the event', async () => {
+    const { service, stored, buffered } = build();
+
+    await service.record({ ...payload, campaignId: 'bazos-cz-search' }, 'bazos');
+
+    expect((stored[0] as Record<string, unknown>).campaignId).toBe('bazos-cz-search');
+    const envelope = buffered[0] as { payload: Record<string, unknown> };
+    expect(envelope.payload.campaignId).toBe('bazos-cz-search');
+  });
+
+  it('stores null — not an empty string — when the figure was not split', async () => {
+    // Two states, not three: recorded against a campaign, or not split at all. An empty string
+    // would render identically to "unassigned" and sort differently.
+    const { service, stored, buffered } = build();
+
+    await service.record(payload, 'bazos');
+
+    expect((stored[0] as Record<string, unknown>).campaignId).toBeNull();
+    const envelope = buffered[0] as { payload: Record<string, unknown> };
+    expect(envelope.payload).not.toHaveProperty('campaignId');
+  });
+
+  it('rejects a blank campaignId rather than treating it as unassigned', async () => {
+    const { service, stored } = build();
+
+    await expect(service.record({ ...payload, campaignId: '   ' }, 'bazos')).rejects.toBeInstanceOf(
+      ObservationInvalid,
+    );
+    expect(stored).toHaveLength(0);
   });
 });

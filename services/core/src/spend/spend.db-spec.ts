@@ -49,6 +49,7 @@ const observation = (overrides: Record<string, unknown> = {}) => ({
   periodEnd: '2026-07-21',
   amountValue: '15000.00',
   amountCurrency: 'CZK',
+  campaignId: null as string | null,
   evidenceReference: 'report-1',
   enteredBy: 'owner',
   enteredAt: '2026-07-22T08:00:00.000Z',
@@ -182,5 +183,54 @@ describe('the runtime role', () => {
         `UPDATE spend.manual_observation SET superseded_by_observation_id = 'c-1' WHERE observation_id = 'rt-1'`,
       ),
     ).resolves.toBeDefined();
+  });
+});
+
+
+/**
+ * C-006 §2.5 — the campaign dimension, against a real column rather than a mock.
+ */
+describe('the campaign dimension', () => {
+  it('stores and reads back the campaign', async () => {
+    await repository.insert(observation({ campaignId: 'bazos-cz-search' }));
+
+    const stored = await repository.findById('obs-1');
+    expect(stored?.campaignId).toBe('bazos-cz-search');
+  });
+
+  it('stores an unsplit figure as NULL', async () => {
+    await repository.insert(observation());
+
+    const stored = await repository.findById('obs-1');
+    expect(stored?.campaignId).toBeNull();
+  });
+
+  it('refuses a blank campaign at the column, not only at the schema', async () => {
+    // Belt and braces on purpose: the schema guards the API, the CHECK guards everything else that
+    // ever writes this table — a migration, a backfill script, S8's connector.
+    await expect(repository.insert(observation({ campaignId: '   ' }))).rejects.toThrow(
+      /manual_observation_campaign_non_blank|violates check constraint/i,
+    );
+  });
+
+  it('treats the same id under a different campaign as a conflict, not a duplicate', async () => {
+    await repository.insert(observation({ campaignId: 'search' }));
+
+    expect(await repository.insert(observation({ campaignId: 'display' }))).toBe('conflict');
+  });
+
+  it('still reports an identical resubmission as a duplicate', async () => {
+    await repository.insert(observation({ campaignId: 'search' }));
+
+    expect(await repository.insert(observation({ campaignId: 'search' }))).toBe('duplicate');
+  });
+
+  it('lists observations with their campaigns for the report', async () => {
+    await repository.insert(observation({ observationId: 'obs-a', campaignId: 'search' }));
+    await repository.insert(observation({ observationId: 'obs-b', campaignId: 'display' }));
+    await repository.insert(observation({ observationId: 'obs-c' }));
+
+    const rows = await repository.listForExperiment('exp-1');
+    expect(new Set(rows.map((row) => row.campaignId))).toEqual(new Set(['search', 'display', null]));
   });
 });

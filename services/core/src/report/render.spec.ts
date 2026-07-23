@@ -6,8 +6,9 @@ const base: ExperimentReport = {
   workspaceId: 'bazos',
   generatedAt: '2026-07-22T12:00:00.000Z',
   currency: 'CZK',
-  spend: { total: '15000.0000', observations: 1, mixedCurrency: false },
+  spend: { total: '15000.0000', observations: 1, mixedCurrency: false, byCampaign: [] },
   registrations: 24,
+  outOfScope: { otherExperiments: 0, noTouchpoint: 0 },
   attribution: { attributed: 19, unattributed: 5 },
   verdicts: { qualified: 7, disqualified: 11, pending: 6 },
   costPerRegistration: '625.00',
@@ -48,7 +49,7 @@ describe('renderExperimentScreen', () => {
   it('says why the cost metrics are absent when currencies are mixed (C-006 §6.4)', () => {
     const html = render({
       currency: null,
-      spend: { total: null, observations: 2, mixedCurrency: true },
+      spend: { total: null, observations: 2, mixedCurrency: true, byCampaign: [] },
       costPerRegistration: null,
       costPerQualifiedLead: null,
     });
@@ -81,7 +82,7 @@ describe('renderExperimentScreen', () => {
 
   it('does not render money through a float', () => {
     // 0.1 + 0.2 style drift reaching the screen would mean a Number crept into the path.
-    const html = render({ spend: { total: '0.3000', observations: 2, mixedCurrency: false } });
+    const html = render({ spend: { total: '0.3000', observations: 2, mixedCurrency: false, byCampaign: [] } });
     expect(html).toContain('0.3000');
     expect(html).not.toContain('0.30000000000000004');
   });

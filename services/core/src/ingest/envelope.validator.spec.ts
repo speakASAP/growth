@@ -120,6 +120,7 @@ describe('validateEnvelope', () => {
         'growth.lead.created_from_registration.v1',
         'growth.lead.qualification_recorded.v1',
         'growth.spend.observed_manual.v1',
+        'growth.spend.observed_manual.v2',
         'growth.payment_intent.declared.v1',
         'growth.touchpoint.observed.v1',
       ].sort(),

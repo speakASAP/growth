@@ -53,6 +53,19 @@ export function sumDecimalStrings(values: readonly string[]): string | null {
 }
 
 /**
+ * Orders two decimal money strings: negative when `a < b`, positive when `a > b`, 0 when equal.
+ *
+ * Compared as scaled integers, not as text: `"9.0000"` sorts after `"10.0000"` lexicographically,
+ * which would put the smallest campaign at the top of a list ordered by spend. Not a `Number`
+ * subtraction either — that is the one operation this module exists to keep out of the money path.
+ */
+export function compareDecimalStrings(a: string, b: string): number {
+  const left = toScaled(a);
+  const right = toScaled(b);
+  return left === right ? 0 : left < right ? -1 : 1;
+}
+
+/**
  * `total / divisor`, rounded half away from zero to 2dp, as a decimal string.
  *
  * `null` when there is nothing to divide or nothing to divide by (C-006 §6.3) — the caller renders

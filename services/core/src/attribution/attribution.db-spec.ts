@@ -37,7 +37,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.query('TRUNCATE attribution.identity_link, attribution.auth_redirect, attribution.registration');
+  await db.query(
+    'TRUNCATE attribution.identity_link, attribution.auth_redirect, attribution.registration, attribution.touchpoint',
+  );
 });
 
 const redirect = (over: Record<string, unknown> = {}) => ({
@@ -228,5 +230,117 @@ describe('replays', () => {
     const rows = (await links()).rows;
     expect(rows).toHaveLength(1);
     expect(rows[0].session_id).toBe('session-1');
+  });
+});
+
+
+/**
+ * C-006 §4.3 — the landing view, stored so a lead's experiment stays knowable.
+ *
+ * Before S6d these envelopes passed through the ingest buffer onto an exchange with nothing bound
+ * to it, and the buffer deletes published rows after 30 days. The experiment a lead came from was
+ * therefore knowable for a month and unknowable afterwards.
+ */
+describe('storing a touchpoint', () => {
+  const touchpoint = (over: Record<string, unknown> = {}) => {
+    const { payload: payloadOver, ...envelopeOver } = over;
+    return {
+      eventId: 'bbbbbbbb-0000-4000-8000-000000000001',
+      eventType: 'growth.touchpoint.observed.v1',
+      eventVersion: 1,
+      occurredAt: '2026-07-22T09:00:00.000Z',
+      producer: 'growth-web',
+      workspaceId: 'bazos',
+      correlationId: 'session-1',
+      dataClass: 'anonymous',
+      payload: {
+        sessionId: 'session-1',
+        experimentId: 'exp-001',
+        experimentVersion: 'v1',
+        landingVersionId: 'v1-cena',
+        utm: { campaign: 'bazos-cz-search' },
+        consentEvidence: {
+          consentRecordId: 'consent-1',
+          consentVersion: 1,
+          applicablePurposes: ['analytics'],
+          statusAtEventTime: 'granted',
+          evaluatedAt: '2026-07-22T09:00:00.000Z',
+        },
+        ...(payloadOver as Record<string, unknown>),
+        },
+        ...envelopeOver,
+    };
+  };
+
+  it('stores the experiment the session was looking at', async () => {
+    await service.onTouchpoint(touchpoint() as never);
+
+    const { rows } = await db.query('SELECT * FROM attribution.touchpoint');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      touchpoint_id: 'bbbbbbbb-0000-4000-8000-000000000001',
+      session_id: 'session-1',
+      experiment_id: 'exp-001',
+      experiment_version: 'v1',
+      landing_version_id: 'v1-cena',
+      utm_campaign: 'bazos-cz-search',
+      consent_status: 'granted',
+    });
+  });
+
+  it('is idempotent — a redelivery does not add a second view', async () => {
+    // Brokers deliver at least once, and a session's view history decides which experiment a lead
+    // is credited to. A duplicated row would move that answer without anything looking wrong.
+    await service.onTouchpoint(touchpoint() as never);
+    await service.onTouchpoint(touchpoint() as never);
+
+    const { rows } = await db.query('SELECT count(*)::text AS n FROM attribution.touchpoint');
+    expect(rows[0].n).toBe('1');
+  });
+
+  it('keeps a session\'s separate views as separate rows', async () => {
+    await service.onTouchpoint(touchpoint() as never);
+    await service.onTouchpoint(
+      touchpoint({
+        eventId: 'bbbbbbbb-0000-4000-8000-000000000002',
+        occurredAt: '2026-07-22T09:05:00.000Z',
+        payload: { landingVersionId: 'v2-obnova' },
+      }) as never,
+    );
+
+    const { rows } = await db.query('SELECT count(*)::text AS n FROM attribution.touchpoint');
+    expect(rows[0].n).toBe('2');
+  });
+
+  it('stores a view with no utm campaign as null rather than an empty string', async () => {
+    await service.onTouchpoint(touchpoint({ payload: { utm: undefined } }) as never);
+
+    const { rows } = await db.query<{ utm_campaign: string | null }>(
+      'SELECT utm_campaign FROM attribution.touchpoint',
+    );
+    expect(rows[0].utm_campaign).toBeNull();
+  });
+
+  it('refuses UPDATE and DELETE under the runtime role', async () => {
+    // A touchpoint is an observation of something that already happened. There is no correction
+    // path, and the guarantee is held as a privilege rather than as a convention.
+    await service.onTouchpoint(touchpoint() as never);
+
+    const runtime = new (require('pg').Client)({
+      connectionString:
+        process.env.TEST_RUNTIME_DATABASE_URL ??
+        'postgresql://growth_core:testpw@127.0.0.1:55432/growth_core_test',
+    });
+    await runtime.connect();
+    try {
+      await expect(
+        runtime.query("UPDATE attribution.touchpoint SET experiment_id = 'exp-999'"),
+      ).rejects.toThrow(/permission denied/i);
+      await expect(runtime.query('DELETE FROM attribution.touchpoint')).rejects.toThrow(
+        /permission denied/i,
+      );
+    } finally {
+      await runtime.end();
+    }
   });
 });

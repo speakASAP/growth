@@ -4,7 +4,13 @@ import { SpendRepository } from './spend.repository';
 import { IngestService } from '../ingest/ingest.service';
 import { validateEnvelope, ValidationFailure } from '../ingest/envelope.validator';
 
-export const MANUAL_SPEND_EVENT = 'growth.spend.observed_manual.v1';
+/**
+ * v2 since S6d. The bump carries `campaignId`, which v1 cannot: its `eventType` and `eventVersion`
+ * are `const`, so a v1 envelope with the extra field is invalid by construction — which is the
+ * property that makes a consumer's "I accept everything v1 permits" test worth writing (C-006 §2.5).
+ */
+export const MANUAL_SPEND_EVENT = 'growth.spend.observed_manual.v2';
+export const MANUAL_SPEND_EVENT_VERSION = 2;
 
 export class ObservationInvalid extends Error {
   constructor(readonly failures: ValidationFailure[]) {
@@ -21,6 +27,12 @@ export class ObservationConflict extends Error {
 export interface ManualSpendPayload {
   observationId: string;
   experimentId: string;
+  /**
+   * Absent means the owner did not split the figure — NOT that the spend belongs to no campaign.
+   * Unassigned spend keeps its own line in the report and stays in the experiment's total: the
+   * money left the account either way (C-006 §2.5).
+   */
+  campaignId?: string;
   platform: string;
   periodStart: string;
   periodEnd: string;
@@ -59,7 +71,7 @@ export class SpendService {
     const envelope = {
       eventId: randomUUID(),
       eventType: MANUAL_SPEND_EVENT,
-      eventVersion: 1,
+      eventVersion: MANUAL_SPEND_EVENT_VERSION,
       occurredAt: new Date().toISOString(),
       // growth-core is the producer. The caller sends the payload only — an accepted envelope
       // would let it claim to be a different service.
@@ -76,6 +88,7 @@ export class SpendService {
     const outcome = await this.repository.insert({
       observationId: payload.observationId,
       experimentId: payload.experimentId,
+      campaignId: payload.campaignId ?? null,
       workspaceId,
       platform: payload.platform,
       periodStart: payload.periodStart,

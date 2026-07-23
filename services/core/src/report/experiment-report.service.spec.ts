@@ -1,11 +1,17 @@
 import { ExperimentReportService } from './experiment-report.service';
 
-type Verdict = { leadId: string; verdict: 'qualified' | 'disqualified' | 'pending'; attributed: boolean };
+type Verdict = {
+  leadId: string;
+  verdict: 'qualified' | 'disqualified' | 'pending';
+  attributed: boolean;
+  experimentId: string | null;
+};
 
-function observation(amountValue: string, amountCurrency = 'CZK') {
+function observation(amountValue: string, amountCurrency = 'CZK', campaignId: string | null = null) {
   return {
-    observationId: `obs-${amountValue}-${amountCurrency}`,
+    observationId: `obs-${amountValue}-${amountCurrency}-${campaignId ?? 'none'}`,
     experimentId: 'exp-001',
+    campaignId,
     workspaceId: 'bazos',
     platform: 'google_ads',
     periodStart: '2026-07-22',
@@ -33,7 +39,14 @@ function build(verdicts: Verdict[], observations: ReturnType<typeof observation>
 }
 
 const verdicts = (spec: Array<[Verdict['verdict'], boolean]>): Verdict[] =>
-  spec.map(([verdict, attributed], i) => ({ leadId: `lead-${i}`, verdict, attributed }));
+  // Every lead in the base fixtures belongs to the experiment under test; the bucketing cases
+  // below say otherwise explicitly, so a scoping bug cannot hide behind a default.
+  spec.map(([verdict, attributed], i) => ({
+    leadId: `lead-${i}`,
+    verdict,
+    attributed,
+    experimentId: 'exp-001',
+  }));
 
 describe('ExperimentReportService', () => {
   it('reports the F-006 §3 worked example', async () => {
@@ -163,5 +176,117 @@ describe('ExperimentReportService', () => {
 
     expect(qualification.currentVerdicts).toHaveBeenCalledWith('bazos');
     expect(spend.listForExperiment).toHaveBeenCalledWith('exp-042');
+  });
+});
+
+
+describe('scoping to one experiment (C-006 §6.6)', () => {
+  const lead = (id: string, experimentId: string | null): Verdict => ({
+    leadId: id,
+    verdict: 'qualified',
+    attributed: true,
+    experimentId,
+  });
+
+  it('counts only the leads whose touchpoint names this experiment', async () => {
+    const { service } = build(
+      [lead('a', 'exp-001'), lead('b', 'exp-002'), lead('c', null)],
+      [observation('900.0000')],
+    );
+
+    const report = await service.build('exp-001');
+
+    expect(report.registrations).toBe(1);
+    expect(report.outOfScope).toEqual({ otherExperiments: 1, noTouchpoint: 1 });
+    // 900 / 1, not 900 / 3. The other two leads belong to another experiment and to none.
+    expect(report.costPerRegistration).toBe('900.00');
+  });
+
+  it('never hides the leads it does not count', async () => {
+    // The honest cost of scoping: these registrations are real, and excluding them makes THIS
+    // experiment read worse than reality. Silently dropping them would make it read better.
+    const { service } = build([lead('a', 'exp-001'), ...Array.from({ length: 9 }, (_, i) => lead(`x${i}`, null))], [
+      observation('1000.0000'),
+    ]);
+
+    const report = await service.build('exp-001');
+
+    expect(report.registrations).toBe(1);
+    expect(report.outOfScope.noTouchpoint).toBe(9);
+    expect(report.costPerRegistration).toBe('1000.00');
+  });
+
+  it('reports zero rather than every workspace lead when nothing matches', async () => {
+    const { service } = build([lead('a', 'exp-002'), lead('b', 'exp-003')], [observation('500.0000')]);
+
+    const report = await service.build('exp-001');
+
+    expect(report.registrations).toBe(0);
+    expect(report.verdicts).toEqual({ qualified: 0, disqualified: 0, pending: 0 });
+    // Nothing to divide by — null, never 0 and never Infinity (C-006 §6.3).
+    expect(report.costPerRegistration).toBeNull();
+    expect(report.outOfScope.otherExperiments).toBe(2);
+  });
+});
+
+describe('spend by campaign (C-006 §2.5)', () => {
+  it('splits the total per campaign and keeps unassigned spend as its own line', async () => {
+    const { service } = build(verdicts([['qualified', true]]), [
+      observation('1000.0000', 'CZK', 'search'),
+      observation('250.5000', 'CZK', 'display'),
+      observation('99.5000', 'CZK', null),
+    ]);
+
+    const report = await service.build('exp-001');
+
+    expect(report.spend.byCampaign).toEqual([
+      { campaignId: 'search', total: '1000.0000', observations: 1 },
+      { campaignId: 'display', total: '250.5000', observations: 1 },
+      { campaignId: null, total: '99.5000', observations: 1 },
+    ]);
+    // The total is the sum of every line, unassigned included: the money left the account.
+    expect(report.spend.total).toBe('1350.0000');
+    expect(report.costPerRegistration).toBe('1350.00');
+  });
+
+  it('sums several entries for the same campaign exactly', async () => {
+    const { service } = build(verdicts([['qualified', true]]), [
+      { ...observation('0.1000', 'CZK', 'search'), observationId: 'obs-a' },
+      { ...observation('0.2000', 'CZK', 'search'), observationId: 'obs-b' },
+    ]);
+
+    const report = await service.build('exp-001');
+
+    expect(report.spend.byCampaign).toEqual([
+      { campaignId: 'search', total: '0.3000', observations: 2 },
+    ]);
+    expect(report.spend.byCampaign[0].total).not.toContain('0.30000000000000004');
+  });
+
+  it('orders campaigns by spend, comparing decimals rather than text', async () => {
+    // '9' sorts after '10' as text. Ordered as money, the larger campaign comes first.
+    const { service } = build(verdicts([['qualified', true]]), [
+      observation('9.0000', 'CZK', 'small'),
+      observation('10.0000', 'CZK', 'large'),
+    ]);
+
+    const report = await service.build('exp-001');
+
+    expect(report.spend.byCampaign.map((row) => row.campaignId)).toEqual(['large', 'small']);
+  });
+
+  it('shows no campaign breakdown at all when currencies are mixed', async () => {
+    // Same reason the total is suppressed: a per-campaign figure adding CZK to EUR is wrong and
+    // looks completely fine (C-006 §6.4).
+    const { service } = build(verdicts([['qualified', true]]), [
+      observation('100.0000', 'CZK', 'search'),
+      observation('100.0000', 'EUR', 'search'),
+    ]);
+
+    const report = await service.build('exp-001');
+
+    expect(report.spend.mixedCurrency).toBe(true);
+    expect(report.spend.byCampaign).toEqual([]);
+    expect(report.spend.total).toBeNull();
   });
 });

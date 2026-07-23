@@ -146,3 +146,72 @@ describe('the visitor is never blocked by our own recording', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+
+/**
+ * S6d / F-007 — the landing must not run without knowing which experiment it serves.
+ *
+ * These two used to fall back to the literal string 'unknown'. Since a lead's experiment is now
+ * derived from its touchpoint, that fallback stopped being cosmetic: 'unknown' joins, counts and
+ * reports, so a real experiment's spend would be divided by leads credited to an experiment that
+ * does not exist.
+ */
+describe('the experiment this deployment serves', () => {
+  const withoutExperiment = (missing: string) =>
+    configWith({
+      GROWTH_GSID_HMAC_SECRET: 'test-secret',
+      GROWTH_WORKSPACE_ID: 'bazos',
+      GROWTH_EXPERIMENT_ID: 'exp-001',
+      GROWTH_EXPERIMENT_VERSION: 'v1',
+      [missing]: undefined,
+    });
+
+  it.each(['GROWTH_EXPERIMENT_ID', 'GROWTH_EXPERIMENT_VERSION'])(
+    'refuses to construct without %s',
+    (key) => {
+      // Thrown from the constructor, so a deploy that forgot the ConfigMap fails the pod. Throwing
+      // per request would instead break the page for a visitor, which is the trade this service
+      // refuses everywhere else.
+      expect(() => new LandingController(emitterStub(), withoutExperiment(key))).toThrow(
+        new RegExp(`MISSING: ${key}`),
+      );
+    },
+  );
+
+  it('refuses a blank value as firmly as a missing one', () => {
+    expect(
+      () =>
+        new LandingController(
+          emitterStub(),
+          configWith({
+            GROWTH_GSID_HMAC_SECRET: 'test-secret',
+            GROWTH_EXPERIMENT_ID: '   ',
+            GROWTH_EXPERIMENT_VERSION: 'v1',
+          }),
+        ),
+    ).toThrow(/MISSING: GROWTH_EXPERIMENT_ID/);
+  });
+
+  it('records the configured experiment on the touchpoint, never a default', async () => {
+    const emitter = emitterStub();
+    const controller = new LandingController(
+      emitter,
+      configWith({
+        GROWTH_GSID_HMAC_SECRET: 'test-secret',
+        GROWTH_WORKSPACE_ID: 'bazos',
+        GROWTH_EXPERIMENT_ID: 'exp-002',
+        GROWTH_EXPERIMENT_VERSION: 'v3',
+      }),
+    );
+
+    await controller.consent(
+      { decision: granted, landingVersionId: 'v1-cena' } as never,
+      {} as never,
+      fakeResponse() as never,
+    );
+
+    const envelope = emitter.emit.mock.calls[0][0] as { payload: Record<string, unknown> };
+    expect(envelope.payload.experimentId).toBe('exp-002');
+    expect(envelope.payload.experimentVersion).toBe('v3');
+  });
+});

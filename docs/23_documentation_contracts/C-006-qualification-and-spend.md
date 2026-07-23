@@ -1,6 +1,8 @@
 # C-006 — Contract: qualification and manual spend
 
 **Slice:** S6 · **Gate:** ② CONTRACT · **Feature:** [F-006](../10_features/F-006-qualification-and-spend.md)
+**Amended by S6d, 2026-07-23** — §2.4/§2.5 (campaign dimension), §4.3 (`attribution.touchpoint`),
+§6.1/§6.6 (per-experiment scoping). Feature: [F-007](../10_features/F-007-per-experiment-and-per-campaign-measurement.md)
 **Decisions:** D19 (architecture §4.4.1) · [D-002](../07_decisions/D-002-landing-conversion-and-buffer.md) · [D-005](../07_decisions/D-005-gsid-propagation-correction.md)
 **Status:** ready for IMPL · **Date:** 2026-07-22
 
@@ -85,7 +87,7 @@ cycle is reachable by a broken one, and a report that answers arbitrarily beats 
 
 ---
 
-## 2. `growth.spend.observed_manual.v1`
+## 2. `growth.spend.observed_manual` — v1, superseded by v2 (§2.5)
 
 Producer `growth-core` (owner-entered) · `dataClass: "operational"`
 Schema unchanged from [C-005](C-005-landing-and-ingestion.md) §2.4 —
@@ -136,14 +138,61 @@ owner-typed number as invoice-reconciled.
 `supersededByObservationId` is **not implemented in S6** — no connector exists to write it. The
 column exists so S8 does not need a migration on a table that already holds production rows.
 
-### 2.4 Granularity — unresolved, deliberately
+### 2.4 Granularity — resolved 2026-07-23, was unresolved
 
-The schema keys an observation on `(experimentId, platform, periodStart, periodEnd)` with **no
-campaign dimension**. Per-day per-experiment is sufficient while one campaign runs per experiment.
+> The original text, kept because it states the constraint the resolution had to satisfy:
+>
+> The schema keys an observation on `(experimentId, platform, periodStart, periodEnd)` with **no
+> campaign dimension**. Per-day per-experiment is sufficient while one campaign runs per experiment.
+>
+> Per-campaign spend requires `campaignId` in the payload, which is a **v2 schema**, not a field
+> added quietly to v1. Flagged for the owner in
+> [F-006](../10_features/F-006-qualification-and-spend.md); not decided here.
 
-Per-campaign spend requires `campaignId` in the payload, which is a **v2 schema**, not a field
-added quietly to v1. Flagged for the owner in [F-006](../10_features/F-006-qualification-and-spend.md);
-not decided here.
+**Owner decision, 2026-07-23: add it now rather than twice.** The reason is not that a second
+campaign exists yet — it is that spend already recorded cannot be split afterwards. A summed figure
+is not a lossy representation of two campaigns, it is the permanent absence of the split, and no
+later schema recovers it. The window in which this is cheap is also closing: nothing consumes
+`growth.spend.observed_manual.*` today, so a version bump costs one producer; after S8 the connector
+is a second producer of the same event and the same bump costs a coordinated change.
+
+### 2.5 `growth.spend.observed_manual.v2`
+
+Schema: [`schemas/spend.observed_manual.v2.json`](schemas/spend.observed_manual.v2.json).
+Adds one payload field to v1:
+
+```ts
+campaignId?: string;   // provider campaign id, exactly as it reads in the report the figure came from
+```
+
+**Bumped rather than extended.** `eventType` and `eventVersion` are `const` in v1, so a v1 envelope
+carrying `campaignId` is invalid by construction — which is the property that makes a consumer's
+"I accept everything v1 permits" test meaningful. Both versions stay registered in the ingest
+validator: v1 rows and v1 events already exist, and a schema that stops being enforced is a schema
+that stops describing the data.
+
+**Optional, and optional deliberately.** Requiring it would make the field impossible to fill
+honestly whenever the provider report is not split by campaign, and a required field invites a
+placeholder — `"main"`, `"default"`, the experiment id retyped — which is worse than an absent
+value because it cannot be told apart from a real one.
+
+**Absent means unassigned, never "belongs to no campaign".** The report shows unassigned spend as
+its own line, and it is never folded into a named campaign's total. Cost metrics use the
+experiment's **full** spend, assigned or not: the money left the account either way, and dropping
+unassigned spend from the denominator would flatter every campaign that was split.
+
+`observationId` remains the identity of an entry. Two entries for the same campaign, day and amount
+are two observations, not a duplicate — the same rule v1 states, unchanged by the new dimension.
+`campaignId` **is** part of that identity: the same id resubmitted against a different campaign is
+a changed body and answers 409, not 200, or the stored split would quietly disagree with what the
+owner believes he entered.
+
+**v2 also closes a whitespace hole v1 left open.** Every free-text field carries `pattern: "\S"`
+alongside `minLength: 1` — `observationId`, `experimentId`, `campaignId`, `evidenceReference`,
+`enteredBy`. S6 added `minLength` after finding that a blank `evidenceReference` validated, but
+`minLength` alone still accepts `"   "`, which is the same defect wearing a space. A payload v1
+accepted may therefore be rejected by v2. That is the intended direction: blank free text is
+rejected, never defaulted, and v1 stays as it is because it describes events already written.
 
 ---
 
@@ -221,9 +270,55 @@ spend.manual_observation
   entered_at                     timestamptz not null
   is_manual                      boolean not null default true check (is_manual)
   superseded_by_observation_id   text                     -- S8, see 2.3
+  campaign_id                    text                     -- S6d, v2, see 2.5. Null = unassigned.
   recorded_at                    timestamptz not null default now()
   check (period_end >= period_start)
+  check (campaign_id is null or length(btrim(campaign_id)) > 0)
 ```
+
+The `campaign_id` check mirrors the schema's `minLength: 1`. Nullable **and** non-blank leaves two
+states rather than three: recorded against a campaign, or not split at all. A blank string would be
+a third that renders identically to the second and sorts differently.
+
+### 4.3 `attribution.touchpoint` (S6d)
+
+```sql
+attribution.touchpoint
+  touchpoint_id       text primary key       -- the envelope's eventId, so a redelivery is a no-op
+  session_id          text not null
+  workspace_id        text not null
+  experiment_id       text not null
+  experiment_version  text not null
+  landing_version_id  text not null
+  utm_campaign        text
+  gclid               text
+  consent_status      text not null          -- from consentEvidence.statusAtEventTime
+  occurred_at         timestamptz not null
+  received_at         timestamptz not null default now()
+```
+
+Indexed on `(session_id, occurred_at DESC)` — every read is "the experiment this session saw".
+
+**What is deliberately not stored.** The rest of `consentEvidence`, the referrer and the remaining
+UTM fields. A touchpoint is stored here to answer one question — which experiment a session was
+looking at — and every column beyond that is data kept because it was available rather than because
+something reads it. `consent_status` is the exception: a lead attributed through a session that
+refused consent is a fact the report has to be able to see rather than infer.
+
+**A session with several touchpoints resolves to the view that led to the click** — the most recent
+one at or before `auth_redirect.initiated_at`, not the session's latest view. A visitor who returns
+weeks later and sees the next experiment's landing must not retroactively move a lead that
+registered under the previous one; ordering by "latest view" would do exactly that, and it would
+look like the new experiment converting well.
+
+Views recorded *after* the click are used only when nothing precedes it — clock skew between two
+services rather than a later visit — and then the nearest one wins, so the answer is deterministic
+either way. A visitor who genuinely saw two experiments before one click is a question with no true
+answer; the full row set stays queryable, so the arbitrary part of the answer is inspectable rather
+than lost.
+
+Runtime grants: `SELECT, INSERT` only. A touchpoint is an observation of something that already
+happened; there is no correction path and nothing downstream may rewrite one.
 
 Every table grants the runtime role `growth_core` explicitly, per the repository invariant. The
 runtime role gets `SELECT, INSERT` on `lead_qualification` and **no `UPDATE`/`DELETE`** — the
@@ -268,8 +363,17 @@ interface ExperimentReport {
     total:        string | null;   // decimal STRING, 4dp, null when no observations
     observations: number;
     mixedCurrency: boolean;        // see 6.4
+    byCampaign:   Array<{          // S6d, see 2.5. Ordered by total descending, then campaignId.
+      campaignId:   string | null; // null = unassigned, never merged into a named campaign
+      total:        string;
+      observations: number;
+    }>;
   };
-  registrations:  number;          // = leads, the primary metric
+  registrations:  number;          // leads whose touchpoint names THIS experiment (6.6)
+  outOfScope: {                    // S6d — never counted, never hidden, see 6.6
+    otherExperiments: number;      // leads whose touchpoint names a different experiment
+    noTouchpoint:     number;      // direct signups, cleared cookies, or leads predating S6d
+  };
   attribution: {
     attributed:   number;
     unattributed: number;          // consent refused / cookie cleared — NEVER hidden, see 6.5
@@ -320,13 +424,58 @@ conversions are structurally unattributable ([D-003](../07_decisions/D-003-sessi
 split looks worse than reality and invites a wrong kill decision. A renderer that omits it is
 non-conforming.
 
-### 6.6 The leads/experiment dimension gap — owner decision needed
+### 6.6 The leads/experiment dimension gap — resolved 2026-07-23
 
-`qualification.lead` carries `workspace_id` but **no `experiment_id`**; spend is keyed by
-`experimentId`. The report therefore counts **every lead in the workspace** against the spend of
-the named experiment. While one experiment runs per workspace this is correct. It is wrong the
-moment a second one does — the same defect class as §2.4's missing `campaignId`, and it is flagged,
-not silently papered over. The response repeats this as `workspaceId` so the scope is visible.
+> The original text, kept because the resolution is only comprehensible against it:
+>
+> `qualification.lead` carries `workspace_id` but **no `experiment_id`**; spend is keyed by
+> `experimentId`. The report therefore counts **every lead in the workspace** against the spend of
+> the named experiment. While one experiment runs per workspace this is correct. It is wrong the
+> moment a second one does — the same defect class as §2.4's missing `campaignId`, and it is
+> flagged, not silently papered over. The response repeats this as `workspaceId` so the scope is
+> visible.
+
+**Owner decision, 2026-07-23: close it now.** Experiments are sequential as much as parallel —
+`exp-002` follows `exp-001` on the same workspace — so the defect does not wait for two experiments
+running at once. It fires the day the second experiment starts and silently credits it with the
+previous one's leads.
+
+**A lead's experiment is derived, never stored on the lead.** The chain already exists end to end:
+
+```
+qualification.lead.correlation_id
+  → attribution.auth_redirect.session_id     (the click that verified a gsid)
+  → attribution.touchpoint.session_id        (the landing view, which carries experimentId)
+```
+
+`touchpoint.observed.v1` has carried `experimentId` and `experimentVersion` since C-005; what was
+missing is that nothing **stored** the touchpoint — it passed through `ingest.event_buffer` onto
+`growth.events` where no consumer was bound, and the buffer sweeps published rows after 30 days.
+S6d adds `attribution.touchpoint` and the consumer that fills it (§4.3).
+
+Deriving rather than stamping `experiment_id` onto the lead is the same choice §1.1 makes for
+`pending`: the touchpoint, the click and the lead arrive on three queues at three rates, so a value
+resolved at write time would be resolved against whatever had arrived by then and could never be
+recomputed. A read-time join has no such state to be wrong about.
+
+**Three buckets, always shown.** Scoping a report to one experiment means leads exist that it must
+not count, and how they are shown decides whether the number can be trusted:
+
+| Bucket | Counted in the metrics? |
+|---|---|
+| leads whose touchpoint names **this** experiment | yes |
+| leads whose touchpoint names a **different** experiment | no — shown as a separate count |
+| leads with **no touchpoint** — direct signups, cleared cookies, refused consent, or anyone who arrived before S6d shipped | no — shown as a separate count, never silently dropped |
+
+The third bucket is the honest cost of the fix, and it is the mirror of §6.5. Those registrations
+are real; excluding them from a single experiment's denominator makes that experiment's cost per
+registration read **worse** than reality, exactly as unattributed conversions already do. Both
+counts sit next to the metric so the two are read together. A report whose third bucket dwarfs its
+first is not a bad experiment — it is a broken measurement chain, and it must be visible as such
+rather than arithmetically absorbed.
+
+`workspaceId` stays in the response. It is no longer the scope of the counts, but it is still the
+scope of the question, and removing it would make old and new responses indistinguishable.
 
 ### 6.7 The screen
 

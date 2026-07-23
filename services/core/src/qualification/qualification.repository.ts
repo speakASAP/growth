@@ -112,14 +112,27 @@ export class QualificationRepository {
    * the owner paid for. That is the whole reason cost-per-qualified keeps pending leads in the
    * numerator: excluding unworked leads would flatter the metric exactly when the owner is behind
    * on working them.
+   *
+   * ### The experiment a lead came from (S6d, C-006 §6.6)
+   *
+   * Returned per lead, `null` when it cannot be established, and never stored on the lead: the
+   * touchpoint, the click and the lead arrive on three queues at three rates, so a value resolved
+   * at write time would be resolved against whatever had arrived by then and could never be
+   * recomputed. Bucketing is the caller's job — this returns the fact, not the policy.
    */
   async currentVerdicts(workspaceId: string): Promise<
-    Array<{ leadId: string; verdict: 'qualified' | 'disqualified' | 'pending'; attributed: boolean }>
+    Array<{
+      leadId: string;
+      verdict: 'qualified' | 'disqualified' | 'pending';
+      attributed: boolean;
+      experimentId: string | null;
+    }>
   > {
     const { rows } = await this.db.query<{
       lead_id: string;
       verdict: 'qualified' | 'disqualified' | 'pending';
       attributed: boolean;
+      experiment_id: string | null;
     }>(
       `WITH RECURSIVE scoped AS (
               SELECT qq.qualification_id, qq.lead_id, qq.qualification_status, qq.decided_at,
@@ -153,10 +166,33 @@ export class QualificationRepository {
          )
          SELECT l.lead_id,
                 COALESCE(q.qualification_status, 'pending') AS verdict,
-                (il.user_id IS NOT NULL)                    AS attributed
+                (il.user_id IS NOT NULL)                    AS attributed,
+                src.experiment_id                           AS experiment_id
            FROM qualification.lead l
            LEFT JOIN current q ON q.lead_id = l.lead_id
            LEFT JOIN attribution.identity_link il ON il.user_id = l.user_id
+           -- The lead's experiment, walked back through the click to the landing view it came
+           -- from. Null for a direct signup, a refused consent, a cleared cookie, or any lead
+           -- that predates the touchpoint table — all of which the report counts separately
+           -- rather than folding into the experiment (C-006 §6.6).
+           LEFT JOIN LATERAL (
+             SELECT t.experiment_id
+               FROM attribution.auth_redirect ar
+               JOIN attribution.touchpoint t ON t.session_id = ar.session_id
+              WHERE ar.correlation_id = l.correlation_id
+                AND ar.session_id IS NOT NULL
+              -- The view that led to THIS click, not the session's latest view. A visitor who
+              -- returns weeks later and sees the next experiment's landing must not retroactively
+              -- move a lead that was already registered. Views recorded after the click are used
+              -- only when nothing precedes it — clock skew between two services, not a later
+              -- visit — and then the nearest one wins so the answer stays deterministic.
+              ORDER BY (t.occurred_at <= ar.initiated_at) DESC,
+                       CASE WHEN t.occurred_at <= ar.initiated_at
+                            THEN ar.initiated_at - t.occurred_at
+                            ELSE t.occurred_at - ar.initiated_at END ASC,
+                       t.touchpoint_id DESC
+              LIMIT 1
+           ) src ON true
           WHERE l.workspace_id = $1`,
       [workspaceId],
     );
@@ -165,6 +201,7 @@ export class QualificationRepository {
       leadId: row.lead_id,
       verdict: row.verdict,
       attributed: row.attributed,
+      experimentId: row.experiment_id ?? null,
     }));
   }
 

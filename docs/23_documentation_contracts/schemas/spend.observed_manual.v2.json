@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfares.cz/schemas/growth/spend.observed_manual.v2.json",
+  "title": "Manual spend observation (v2)",
+  "description": "Owner-entered spend before any connector exists. Superseded, never overwritten, by connector observations. v2 adds the campaign dimension: v1 keyed an observation on (experimentId, platform, period) only, so two campaigns inside one experiment could be recorded as their sum and never separated again. Bumped rather than extended in place because eventType and eventVersion are const in v1 - see C-006 2.5.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "workspaceId",
+    "correlationId",
+    "dataClass",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "growth.spend.observed_manual.v2"
+    },
+    "eventVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "growth-core"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "causationId": {
+      "type": "string",
+      "description": "OPTIONAL - root events have none"
+    },
+    "dataClass": {
+      "const": "operational"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observationId",
+        "experimentId",
+        "platform",
+        "periodStart",
+        "periodEnd",
+        "amount",
+        "evidenceReference",
+        "enteredBy",
+        "enteredAt",
+        "isManual"
+      ],
+      "properties": {
+        "observationId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "experimentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "campaignId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "OPTIONAL, and optional on purpose - see C-006 2.5. The provider's campaign identifier as it appears in the report the figure was read off. Absent means the owner did not split the figure, NOT that the spend belongs to no campaign: an absent campaignId is reported as 'unassigned' and is never merged into a named campaign's total. minLength 1 because a blank string would be a third state that looks like the second. Whitespace-only is rejected too, not just empty: a blank reference is the failure this whole family of fields exists to prevent, and v1's minLength alone let '   ' through.",
+          "pattern": "\\S"
+        },
+        "platform": {
+          "const": "google_ads"
+        },
+        "periodStart": {
+          "type": "string",
+          "format": "date"
+        },
+        "periodEnd": {
+          "type": "string",
+          "format": "date"
+        },
+        "amount": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "currency"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "pattern": "^-?\\d+(\\.\\d{1,4})?$",
+              "description": "decimal STRING - never a float, cents are lost in IEEE-754"
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            }
+          }
+        },
+        "evidenceReference": {
+          "type": "string",
+          "minLength": 1,
+          "description": "provider report / export identifier. minLength added 2026-07-22 (S6): without it a blank string validated, and a blank evidence reference means a hand-typed spend figure with no provenance at all - which is the one thing this field exists to prevent. The repository rule is that blank free text is rejected, not defaulted.",
+          "pattern": "\\S"
+        },
+        "enteredBy": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "enteredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "isManual": {
+          "const": true,
+          "description": "never presented as invoice-reconciled"
+        }
+      }
+    }
+  }
+}

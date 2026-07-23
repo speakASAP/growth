@@ -3,6 +3,7 @@ import {
   AttributionConsumer,
   AUTH_REDIRECT_QUEUE,
   AUTH_REGISTRATION_QUEUE,
+  TOUCHPOINT_QUEUE,
 } from './attribution.consumer';
 import { AttributionService } from './attribution.service';
 
@@ -86,7 +87,7 @@ describe('AttributionConsumer', () => {
     await consumer.start();
 
     expect(broker.queues.map((q) => q.name).sort()).toEqual(
-      [AUTH_REDIRECT_QUEUE, AUTH_REGISTRATION_QUEUE].sort(),
+      [AUTH_REDIRECT_QUEUE, AUTH_REGISTRATION_QUEUE, TOUCHPOINT_QUEUE].sort(),
     );
     expect(broker.queues.every((q) => (q.options as { durable: boolean }).durable)).toBe(true);
   });
@@ -103,6 +104,9 @@ describe('AttributionConsumer', () => {
       expect.arrayContaining([
         { queue: AUTH_REDIRECT_QUEUE, exchange: 'growth.events', key: 'growth.auth_redirect.initiated.v1' },
         { queue: AUTH_REGISTRATION_QUEUE, exchange: 'auth.events', key: 'auth.user.registered.v1' },
+        // S6d. Bound on boot like the other two: growth-core publishes touchpoints onto this same
+        // exchange, and until this binding existed a topic exchange discarded every one of them.
+        { queue: TOUCHPOINT_QUEUE, exchange: 'growth.events', key: 'growth.touchpoint.observed.v1' },
       ]),
     );
   });

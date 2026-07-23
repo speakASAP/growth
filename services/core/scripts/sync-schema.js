@@ -28,6 +28,9 @@ const SCHEMAS = [
   { file: 'user.registered.v1.json', target: '../src/ingest/schemas' },
   { file: 'lead.created_from_registration.v1.json', target: '../src/ingest/schemas' },
   { file: 'spend.observed_manual.v1.json', target: '../src/ingest/schemas' },
+  // S6d — v2 adds campaignId (C-006 §2.5). v1 stays synced: v1 events and v1 rows exist, and a
+  // schema that stops being enforced is a schema that stops describing the data.
+  { file: 'spend.observed_manual.v2.json', target: '../src/ingest/schemas' },
   { file: 'payment_intent.declared.v1.json', target: '../src/ingest/schemas' },
   // S6 — qualification (C-006). growth-core consumes it, and validates the spend event it
   // produces itself against the same schema the ingest edge would apply.

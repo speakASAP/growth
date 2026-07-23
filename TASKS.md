@@ -96,11 +96,23 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       then `port-forward` remains the access control. Nothing here is an implementer's call to
       revisit.
 
-- [ ] **The report counts leads per WORKSPACE, not per experiment (C-006 §6.6).**
-      `qualification.lead` has no `experiment_id`; spend has no `campaignId` (below). So the report
-      divides the named experiment's spend by every lead in the workspace. Correct while one
-      experiment runs per workspace, wrong the moment a second does. Same defect class as the
-      missing campaign dimension, and it needs the same v2 decision.
+- [x] **The report counted leads per WORKSPACE, not per experiment — FIXED in S6d, not deployed.**
+      `qualification.lead` had no `experiment_id`, so the report divided the named experiment's
+      spend by every lead in the workspace. Owner decision 2026-07-23: close it now rather than
+      when a second experiment exists, because experiments are **sequential** too — `exp-002`
+      follows `exp-001` on the same workspace and would have inherited its predecessor's leads.
+
+      A lead's experiment is now **derived**, never stored on the lead:
+      `lead.correlation_id → attribution.auth_redirect.session_id → attribution.touchpoint`.
+      The touchpoint has carried `experimentId` since C-005; what was missing is that nothing kept
+      it — the envelope passed through `ingest.event_buffer` onto `growth.events` with no queue
+      bound, and the buffer deletes published rows after 30 days. Migration 007 adds
+      `attribution.touchpoint`; the consumer declares and binds `growth.touchpoints` on boot.
+
+      Leads the report must not count are **shown, never dropped**: `outOfScope.otherExperiments`
+      and `outOfScope.noTouchpoint`. The second group is the honest cost — those registrations are
+      real, so excluding them makes this experiment read *worse* than reality, the same direction
+      the unattributed split already reads. C-006 §6.6.
 
 ### S6 production verification, 2026-07-22
 
@@ -130,11 +142,23 @@ S6b was verified on the same production data: the live report returned `costPerR
 `"1500.00"` and `costPerQualifiedLead` `null` (0 qualified → renders `—`), the screen rendered, and
 the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.5000`.
 
-- [ ] **Spend has no campaign dimension — owner decision needed.**
-      `growth.spend.observed_manual.v1` carries `experimentId` but no `campaignId`, so spend is
-      recorded per experiment per period only. That is enough while one campaign runs per
-      experiment and wrong the moment a second one does. Adding `campaignId` is a **v2 schema**,
-      not a quiet field addition. Flagged, not decided (C-006 §2.4).
+- [x] **Spend had no campaign dimension — DECIDED and BUILT in S6d, not deployed.**
+      Owner decision 2026-07-23: add it now rather than twice. Not because a second campaign
+      exists, but because spend already recorded **cannot be split afterwards** — a summed figure
+      is the permanent absence of the split, and no later schema recovers it. The bump was also
+      cheap exactly once: nothing consumes `growth.spend.observed_manual.*` today, so it costs one
+      producer; after S8 the connector is a second producer of the same event.
+
+      `growth.spend.observed_manual.v2` adds an **optional** `campaignId`. Optional deliberately:
+      required would be unfillable whenever the provider report is not split, and it invites
+      `"main"` — a placeholder indistinguishable from a real campaign id. Absent means *unassigned*,
+      which gets its own line in the report and stays in the experiment's total; the money left the
+      account whether or not the owner split the figure. Both schema versions stay registered in the
+      ingest validator. C-006 §2.5.
+
+      v2 also closes a whitespace hole: every free-text field now carries `pattern: "\\S"` beside
+      `minLength: 1`. S6 added `minLength` after a blank `evidenceReference` validated, but
+      `minLength` alone still accepted `"   "` — the same defect wearing a space.
 
 - [ ] **`LeadQualification` in leads-microservice is append-only by convention only.** growth-core
       holds the real guarantee — the runtime role has no UPDATE or DELETE grant on
@@ -269,6 +293,21 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       come from the same build, so a normal deploy is consistent — but a rollback to an older build
       tag would run new migrations against old application code. Needs a `deploy_post_manifests`
       hook in `deploy.config.sh` (stub is already there, commented).
+
+- [ ] **S6d is not deployed.** Migration 007 has been applied to the throwaway test database only.
+      Production needs: `growth-core` rebuilt and rolled out (which also ships the C-006 §1.4
+      supersession fix, still undeployed), migration 007 through the migrate init container, and
+      `growth-web` rebuilt — it now **refuses to start** without `GROWTH_EXPERIMENT_ID` and
+      `GROWTH_EXPERIMENT_VERSION`, which its ConfigMap already sets (`exp-001` / `v1`).
+
+      ⚠️ **The ConfigMap is now load-bearing for measurement.** Launching the real experiment as
+      `v2` (owner decision, 2026-07-23) means updating `k8s/configmap-web.yaml` and rolling the
+      landing — otherwise every touchpoint keeps saying `exp-001`/`v1` and the new experiment's
+      report counts nothing.
+
+      ⚠️ **Bind before publishing.** `growth.touchpoints` is declared and bound by the consumer on
+      boot, so growth-core must be rolled out **before** any touchpoint traffic matters; a topic
+      exchange discards what has no binding, and those events are gone rather than delayed.
 
 ## Later
 

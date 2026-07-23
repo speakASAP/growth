@@ -75,6 +75,10 @@ export class ExperimentReportController {
     const payload: ManualSpendPayload = {
       observationId: randomUUID(),
       experimentId,
+      // Empty means "not split by campaign", which is a real answer and the common one. The blank
+      // string itself never reaches the payload: the schema rejects it, and an absent field is the
+      // shape that means unassigned (C-006 §2.5).
+      campaignId: String(form?.campaignId ?? '').trim() || undefined,
       platform: 'google_ads',
       periodStart: String(form?.periodStart ?? ''),
       periodEnd: String(form?.periodEnd ?? ''),

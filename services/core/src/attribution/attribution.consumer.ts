@@ -4,10 +4,12 @@ import { AttributionService } from './attribution.service';
 
 export const AUTH_REDIRECT_QUEUE = 'growth.auth-redirects';
 export const AUTH_REGISTRATION_QUEUE = 'growth.auth-registrations';
+export const TOUCHPOINT_QUEUE = 'growth.touchpoints';
 
 const GROWTH_EXCHANGE = 'growth.events';
 const AUTH_EXCHANGE = 'auth.events';
 const AUTH_REDIRECT_KEY = 'growth.auth_redirect.initiated.v1';
+const TOUCHPOINT_KEY = 'growth.touchpoint.observed.v1';
 const USER_REGISTERED_KEY = 'auth.user.registered.v1';
 
 /** Bounded so a backlog stays the broker's problem rather than becoming this pod's memory. */
@@ -97,6 +99,7 @@ export class AttributionConsumer implements OnApplicationBootstrap, OnModuleDest
 
     await this.bind(channel, GROWTH_EXCHANGE, AUTH_REDIRECT_QUEUE, AUTH_REDIRECT_KEY);
     await this.bind(channel, AUTH_EXCHANGE, AUTH_REGISTRATION_QUEUE, USER_REGISTERED_KEY);
+    await this.bind(channel, GROWTH_EXCHANGE, TOUCHPOINT_QUEUE, TOUCHPOINT_KEY);
 
     await channel.consume(AUTH_REDIRECT_QUEUE, (msg) =>
       this.handle(channel, msg, (event) => this.attribution.onAuthRedirect(event as never)),
@@ -104,9 +107,12 @@ export class AttributionConsumer implements OnApplicationBootstrap, OnModuleDest
     await channel.consume(AUTH_REGISTRATION_QUEUE, (msg) =>
       this.handle(channel, msg, (event) => this.attribution.onUserRegistered(event as never)),
     );
+    await channel.consume(TOUCHPOINT_QUEUE, (msg) =>
+      this.handle(channel, msg, (event) => this.attribution.onTouchpoint(event as never)),
+    );
 
     this.logger.log(
-      `consuming ${AUTH_REDIRECT_QUEUE} and ${AUTH_REGISTRATION_QUEUE} for the registration join`,
+      `consuming ${AUTH_REDIRECT_QUEUE}, ${AUTH_REGISTRATION_QUEUE} and ${TOUCHPOINT_QUEUE}`,
     );
   }
 

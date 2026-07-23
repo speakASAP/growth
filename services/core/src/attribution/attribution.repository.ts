@@ -9,6 +9,19 @@ export interface RedirectRecord {
   initiatedAt: string;
 }
 
+export interface TouchpointRecord {
+  touchpointId: string;
+  sessionId: string;
+  workspaceId: string;
+  experimentId: string;
+  experimentVersion: string;
+  landingVersionId: string;
+  utmCampaign: string | null;
+  gclid: string | null;
+  consentStatus: string;
+  occurredAt: string;
+}
+
 export interface RegistrationRecord {
   userId: string;
   correlationId: string | null;
@@ -44,6 +57,35 @@ export class AttributionRepository {
         record.sessionId,
         record.gsidStatus,
         record.initiatedAt,
+      ],
+    );
+  }
+
+  /**
+   * C-006 §4.3 — the landing view, kept so a lead's experiment stays knowable.
+   *
+   * Keyed on the envelope's `eventId`, so a broker redelivery collides instead of adding a second
+   * row: a session's touchpoint history decides which experiment a lead is credited to, and a
+   * duplicated view would move that answer.
+   */
+  async saveTouchpoint(record: TouchpointRecord): Promise<void> {
+    await this.db.query(
+      `INSERT INTO attribution.touchpoint
+         (touchpoint_id, session_id, workspace_id, experiment_id, experiment_version,
+          landing_version_id, utm_campaign, gclid, consent_status, occurred_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (touchpoint_id) DO NOTHING`,
+      [
+        record.touchpointId,
+        record.sessionId,
+        record.workspaceId,
+        record.experimentId,
+        record.experimentVersion,
+        record.landingVersionId,
+        record.utmCampaign,
+        record.gclid,
+        record.consentStatus,
+        record.occurredAt,
       ],
     );
   }

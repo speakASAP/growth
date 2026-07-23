@@ -9,6 +9,7 @@ import authRedirectInitiated from './schemas/auth_redirect.initiated.v1.json';
 import userRegistered from './schemas/user.registered.v1.json';
 import leadCreatedFromRegistration from './schemas/lead.created_from_registration.v1.json';
 import spendObservedManual from './schemas/spend.observed_manual.v1.json';
+import spendObservedManualV2 from './schemas/spend.observed_manual.v2.json';
 import paymentIntentDeclared from './schemas/payment_intent.declared.v1.json';
 import leadQualificationRecorded from './schemas/lead.qualification_recorded.v1.json';
 
@@ -35,6 +36,9 @@ const VALIDATORS: Record<string, ValidateFunction> = {
   'auth.user.registered.v1': ajv.compile(userRegistered),
   'growth.lead.created_from_registration.v1': ajv.compile(leadCreatedFromRegistration),
   'growth.spend.observed_manual.v1': ajv.compile(spendObservedManual),
+  // Both versions stay registered. v1 rows and v1 events already exist, and dropping its schema
+  // would leave them described by nothing (C-006 §2.5).
+  'growth.spend.observed_manual.v2': ajv.compile(spendObservedManualV2),
   'growth.payment_intent.declared.v1': ajv.compile(paymentIntentDeclared),
   'growth.lead.qualification_recorded.v1': ajv.compile(leadQualificationRecorded),
 };

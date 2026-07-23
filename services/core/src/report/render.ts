@@ -32,7 +32,43 @@ function pct(part: number, whole: number): string {
 }
 
 export function renderExperimentScreen(report: ExperimentReport): string {
-  const { attribution: attr, verdicts: v, spend } = report;
+  const { attribution: attr, verdicts: v, spend, outOfScope } = report;
+
+  // One line per campaign plus, when it exists, the spend the owner did not split. Unassigned is
+  // labelled rather than blank: an empty cell reads as a rendering fault, not as a fact (C-006 §2.5).
+  const campaignRows = spend.byCampaign
+    .map(
+      (row) => `<tr><th>${row.campaignId === null
+        ? '<em>unassigned</em>'
+        : esc(row.campaignId)}</th>
+      <td class="n">${esc(row.total)}${report.currency ? ` ${esc(report.currency)}` : ''}</td>
+      <td class="n note">${esc(row.observations)} entr${row.observations === 1 ? 'y' : 'ies'}</td></tr>`,
+    )
+    .join('\n  ');
+
+  const campaignTable = spend.byCampaign.length
+    ? `<table>
+  <tr><th colspan="3" class="note">spend by campaign — the total above is the sum of these</th></tr>
+  ${campaignRows}
+</table>
+${spend.byCampaign.some((row) => row.campaignId === null) && spend.byCampaign.length > 1
+        ? `<p class="note">Unassigned spend is money you entered without naming a campaign. It stays
+           in the total and in every cost metric — it left the account either way.</p>`
+        : ''}`
+    : '';
+
+  const scopeNote =
+    outOfScope.otherExperiments + outOfScope.noTouchpoint > 0
+      ? `<table>
+  <tr><th>leads on another experiment</th><td class="n">${esc(outOfScope.otherExperiments)}</td></tr>
+  <tr><th>leads with no touchpoint</th><td class="n">${esc(outOfScope.noTouchpoint)}</td></tr>
+</table>
+<p class="note">Neither group is counted above. Leads with <strong>no touchpoint</strong> are real
+   registrations whose landing view was never recorded — a direct signup, a cleared cookie, refused
+   consent, or anyone who arrived before this measurement existed. They are excluded from this
+   experiment's denominator, which makes its cost per registration read <em>worse</em> than reality.
+   If this number dwarfs the one above, the measurement chain is broken, not the experiment.</p>`
+      : '';
 
   const currencyNote = spend.mixedCurrency
     ? `<p class="warn">This experiment has spend in <strong>more than one currency</strong>, so no
@@ -75,10 +111,15 @@ ${currencyNote}
 <table>
   <tr><th>spend (manual)</th>
       <td class="n">${metric(spend.total, report.currency)}</td></tr>
-  <tr><th>registrations</th><td class="n">${esc(report.registrations)}</td></tr>
+  <tr><th>registrations</th><td class="n">${esc(report.registrations)}</td>
+      <td class="note">leads that came from this experiment</td></tr>
   <tr class="metric"><th>cost per registration</th>
       <td class="n">${metric(report.costPerRegistration, report.currency)}</td></tr>
 </table>
+
+${campaignTable}
+
+${scopeNote}
 
 <table>
   <tr><th>attributed</th>
@@ -123,6 +164,9 @@ ${currencyNote}
            <input id="amountCurrency" name="amountCurrency" value="${esc(report.currency ?? 'CZK')}"
                   pattern="[A-Z]{3}" required></div>
     </div>
+    <label for="campaignId">campaign (optional — leave empty if the figure is not split)</label>
+    <input id="campaignId" name="campaignId"
+           placeholder="e.g. Bazos · CZ · search">
     <label for="evidenceReference">evidence reference (which report this came off)</label>
     <input id="evidenceReference" name="evidenceReference" required
            placeholder="Google Ads · campaign report 2026-07-22">
