@@ -294,7 +294,20 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       tag would run new migrations against old application code. Needs a `deploy_post_manifests`
       hook in `deploy.config.sh` (stub is already there, commented).
 
-- [ ] **S6d is not deployed.** Migration 007 has been applied to the throwaway test database only.
+- [x] **S6d DEPLOYED AND VERIFIED IN PRODUCTION 2026-07-23** (tag `350a2ba`). Migration 007 applied
+      by the migrate init container; `growth.touchpoints` bound to `growth.events` with 1 consumer
+      and 0 messages; `GET /experiments/exp-001/report` returns the new shape, which is what proves
+      both DDL changes exist and are readable by the runtime role — the response cannot be produced
+      without the touchpoint join and the `campaign_id` column. `growth-web` rolled out and serving.
+      The rollout also shipped the C-006 §1.4 supersession fix, which had been waiting.
+
+      **First honest number:** the live report reads `registrations: 0` and
+      `outOfScope.noTouchpoint: 4`. Those four leads were counted as this experiment's
+      registrations yesterday. They have no stored touchpoint and never will — the table did not
+      exist when they arrived — so they stay unattributable permanently. That is the fix working,
+      not a regression.
+
+      Superseded note (kept for the record): Migration 007 has been applied to the throwaway test database only.
       Production needs: `growth-core` rebuilt and rolled out (which also ships the C-006 §1.4
       supersession fix, still undeployed), migration 007 through the migrate init container, and
       `growth-web` rebuilt — it now **refuses to start** without `GROWTH_EXPERIMENT_ID` and
