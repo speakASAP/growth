@@ -42,11 +42,21 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       transaction still failed with `decision_artefact is append-only (attempted DELETE)`. A
       re-enable that was never tested would be indistinguishable from one that silently failed.
 
-- [ ] **The read model ignores `supersedes_qualification_id`.**
-      `QualificationRepository.currentVerdicts()` picks a lead's current verdict with
-      `ORDER BY decided_at DESC, received_at DESC LIMIT 1` and never looks at the supersession
-      chain that C-006 §1.2 defines corrections in terms of. The field is written, indexed and
+- [x] **The read model ignored `supersedes_qualification_id` — FIXED, and the fix is now proven.**
+      `QualificationRepository.currentVerdicts()` picked a lead's current verdict with
+      `ORDER BY decided_at DESC, received_at DESC LIMIT 1` and never looked at the supersession
+      chain that C-006 §1.2 defines corrections in terms of. The field was written, indexed and
       never read.
+
+      It now resolves the chain in SQL: a recursive walk per judgement, then prefer the judgement
+      **nothing supersedes**, then the longest chain, then time, then id — depth-capped at 64 so a
+      cycle still answers instead of hanging. Four `qualification.db-spec.ts` cases cover exactly the
+      shapes below (a later judgement that supersedes nothing, a correction tied on `decided_at`,
+      two chains of different length); the suite is **18 green** as of 2026-07-23.
+
+      This entry stayed open one commit too long — the note was written after the code was already
+      corrected, so the backlog claimed a defect the repository no longer had. Verified by running
+      the specs, not by reading the note.
 
       While deliveries arrive in decision order the answer is right, which is why the 2026-07-22
       verification passed. It goes wrong when they do not: a redelivered or late correction, two
