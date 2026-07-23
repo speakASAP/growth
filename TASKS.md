@@ -54,22 +54,20 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       shapes below (a later judgement that supersedes nothing, a correction tied on `decided_at`,
       two chains of different length); the suite is **18 green** as of 2026-07-23.
 
-      This entry stayed open one commit too long — the note was written after the code was already
-      corrected, so the backlog claimed a defect the repository no longer had. Verified by running
-      the specs, not by reading the note.
-
-      While deliveries arrive in decision order the answer is right, which is why the 2026-07-22
-      verification passed. It goes wrong when they do not: a redelivered or late correction, two
+      While deliveries arrived in decision order the answer was right, which is why the 2026-07-22
+      verification passed. It went wrong when they did not: a redelivered or late correction, two
       judgements sharing a `decided_at`, or a judgement that supersedes nothing arriving after a
-      correction chain — all surface a superseded judgement as current.
+      correction chain — all surfaced a superseded judgement as current. Found by exactly that
+      shape: a third judgement with `supersedesQualificationId` absent became "current" over a
+      correction that had superseded the first. Wrong verdicts feed `costPerQualifiedLead`
+      directly, and the error is silent.
 
-      Found by exactly that shape during verification: a third judgement with
-      `supersedesQualificationId` absent became "current" over a correction that had superseded
-      the first. Wrong verdicts feed `costPerQualifiedLead` directly, and the error is silent.
+      The three shapes were written as db-specs **before** the fix and observed to fail against the
+      time-ordered query; the cycle case was added because the depth cap needed a witness. The
+      ambiguity is closed rather than left to the reader: **C-006 §1.4** now defines the current
+      verdict as the head of the chain, so the contract and the code say the same thing.
 
-      Fix is either resolving the chain (the judgement nothing supersedes) or stating in C-006
-      that latest-by-time is the definition and `supersedes` is audit-only. It should not stay
-      ambiguous — the contract and the code currently say different things.
+      **Not deployed** — `growth-core` needs a rebuild and rollout before the report changes.
 
 - [ ] **Publishing the experiment screen on a public hostname — DECIDED by the owner 2026-07-23
       (C-006 §6.8).** The screen is on growth-core, which has **no ingress**, and the owner reaches
@@ -195,12 +193,17 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       launch keeps its stray break — append-only, and the owner chose to leave v1 as the verify
       record; the real launch under v2 will be clean.)
 
-- [ ] **`s1a-verify.sh` still defaults to the real `exp-001` and its `edit` probe can create the
-      launch — the poisoning root cause is NOT yet fixed.** Separate from the two fixes above.
-      (a) A verification run should default to a throwaway id (`exp-verify-*`) so the real
-      experiment's append-only history is never spent on a test. (b) The `edit` probe must refuse to
-      be the first write of an id (require the launch to already exist, or a precondition) so it
-      cannot store its sentinel text as the canonical launch. Either fix alone prevents a repeat.
+- [x] **`s1a-verify.sh` poisoning root cause — FIXED 2026-07-23, both defences in place.**
+      (a) The default experiment id is now a throwaway `exp-verify-<UTC date>` (`EXPERIMENT_ID`
+      still overrides), so a verification run never touches the real `exp-001`; same-day steps share
+      the id (re-run = duplicate as designed), a new day gets a clean slate. (b) The `edit` probe now
+      calls `launch_exists()` first and **refuses to be the first write of the launch id** — if no
+      launch artefact exists for the experiment/version it prints REFUSED and sends nothing (a failed
+      query counts as "cannot confirm" and also refuses). Both branches verified against production:
+      `edit` with no prior launch → REFUSED, exit 1, nothing sent; `edit` on `exp-001` (launch
+      exists) → proceeds and the append-only store itself returns 409, so nothing is written either
+      way. The 2026-07-23 incident (edit-before-launch storing sentinel text as canonical) can no
+      longer happen.
 
 - [ ] **No dead-letter queue on the attribution consumer.** A message that cannot be parsed is
       dropped with its raw body logged; a message whose join fails is requeued and will retry

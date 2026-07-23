@@ -59,6 +59,30 @@ guard's existing accepted-role set decides, and the event records **which** prin
 costs nothing now and is the difference between an auditable history and an anonymous one once a
 second operator exists.
 
+### 1.4 The current verdict is the head of the chain — resolved 2026-07-23
+
+A lead's current verdict is the judgement **no other judgement for that lead supersedes**. It is not
+the latest `decided_at`. `supersedesQualificationId` is the producer's statement of what a
+correction replaces; `decided_at` is a clock that agrees with that statement only while deliveries
+arrive in decision order. The read model ranked by time until 2026-07-23 and was therefore wrong on
+a redelivered or late correction, on two judgements sharing a `decided_at`, and on a first
+judgement re-emitted after a correction chain — all of which surfaced a superseded judgement as
+current and fed `costPerQualifiedLead` (§6) with no visible symptom.
+
+Several judgements can be unsuperseded at once — two independent first judgements, or a correction
+whose predecessor has not arrived. The order is made total so the same rows never yield two
+answers:
+
+1. not superseded by any other judgement for the lead;
+2. longest supersession chain — a judgement carrying three corrections outranks one carrying two;
+3. `decidedAt`, then `receivedAt`, then `qualificationId` descending.
+
+Rules 2 and 3 rank shapes the data does not really answer; the point is that they answer the same
+way on every read. The walk is depth-capped at 64: qualification ids come from the producer, so a
+cycle is reachable by a broken one, and a report that answers arbitrarily beats a report that hangs.
+
+`pending` is unaffected — it remains the absence of any judgement (§1.1).
+
 ---
 
 ## 2. `growth.spend.observed_manual.v1`

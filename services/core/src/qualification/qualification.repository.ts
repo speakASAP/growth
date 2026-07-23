@@ -90,9 +90,23 @@ export class QualificationRepository {
   /**
    * The current verdict per lead, with `pending` derived rather than stored (C-006 §1.1).
    *
-   * "Current" is the latest judgement by `decided_at`, tie-broken by `received_at` — two
-   * corrections recorded in the same second must still order deterministically, or the reported
-   * verdict flips between reads.
+   * "Current" is the head of the supersession chain (C-006 §1.4), not the latest `decided_at`.
+   * A correction states which judgement it replaces; `decided_at` is a producer clock that only
+   * agrees with that statement while deliveries happen to arrive in decision order. Ranking by
+   * time was wrong on a redelivered or late correction, on two judgements sharing a `decided_at`,
+   * and on a first judgement re-emitted after a correction chain — each of which surfaced a
+   * superseded judgement as current and fed `costPerQualifiedLead` silently.
+   *
+   * The ordering is total, so the same rows always yield the same verdict:
+   *   1. not superseded by any other judgement for the lead — the definition;
+   *   2. longest chain — a judgement carrying three corrections outranks one carrying two,
+   *      whatever their clocks say;
+   *   3. `decided_at`, then `received_at`, then `qualification_id` — a deterministic answer to a
+   *      question the data does not really answer, for two independent first judgements.
+   *
+   * Ids come from the producer, so a cycle is reachable by a broken producer rather than
+   * impossible. The walk is depth-capped: within a cycle every judgement reaches the cap and rule
+   * 3 decides, which is arbitrary but stable, and the report answers instead of hanging.
    *
    * A lead with no judgement is `pending` and is still counted, because it is still a registration
    * the owner paid for. That is the whole reason cost-per-qualified keeps pending leads in the
@@ -107,19 +121,43 @@ export class QualificationRepository {
       verdict: 'qualified' | 'disqualified' | 'pending';
       attributed: boolean;
     }>(
-      `SELECT l.lead_id,
-              COALESCE(q.qualification_status, 'pending') AS verdict,
-              (il.user_id IS NOT NULL)                    AS attributed
-         FROM qualification.lead l
-         LEFT JOIN LATERAL (
-              SELECT qq.qualification_status
+      `WITH RECURSIVE scoped AS (
+              SELECT qq.qualification_id, qq.lead_id, qq.qualification_status, qq.decided_at,
+                     qq.received_at, qq.supersedes_qualification_id
                 FROM qualification.lead_qualification qq
-               WHERE qq.lead_id = l.lead_id
-               ORDER BY qq.decided_at DESC, qq.received_at DESC
-               LIMIT 1
-         ) q ON true
-         LEFT JOIN attribution.identity_link il ON il.user_id = l.user_id
-        WHERE l.workspace_id = $1`,
+                JOIN qualification.lead ll ON ll.lead_id = qq.lead_id
+               WHERE ll.workspace_id = $1
+         ),
+         walk AS (
+              SELECT s.qualification_id AS from_id, s.lead_id,
+                     s.supersedes_qualification_id AS next_id, 1 AS depth
+                FROM scoped s
+               UNION ALL
+              SELECT w.from_id, w.lead_id, s.supersedes_qualification_id, w.depth + 1
+                FROM walk w
+                JOIN scoped s ON s.qualification_id = w.next_id AND s.lead_id = w.lead_id
+               WHERE w.depth < 64
+         ),
+         chain AS (
+              SELECT from_id, max(depth) AS depth FROM walk GROUP BY from_id
+         ),
+         current AS (
+              SELECT DISTINCT ON (s.lead_id) s.lead_id, s.qualification_status
+                FROM scoped s
+                JOIN chain c ON c.from_id = s.qualification_id
+               ORDER BY s.lead_id,
+                        EXISTS (SELECT 1 FROM scoped o
+                                 WHERE o.lead_id = s.lead_id
+                                   AND o.supersedes_qualification_id = s.qualification_id) ASC,
+                        c.depth DESC, s.decided_at DESC, s.received_at DESC, s.qualification_id DESC
+         )
+         SELECT l.lead_id,
+                COALESCE(q.qualification_status, 'pending') AS verdict,
+                (il.user_id IS NOT NULL)                    AS attributed
+           FROM qualification.lead l
+           LEFT JOIN current q ON q.lead_id = l.lead_id
+           LEFT JOIN attribution.identity_link il ON il.user_id = l.user_id
+          WHERE l.workspace_id = $1`,
       [workspaceId],
     );
 
