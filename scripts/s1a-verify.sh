@@ -14,7 +14,12 @@
 #   ./scripts/s1a-verify.sh budget  "<reason>" 2500.00 # step 5
 #   ./scripts/s1a-verify.sh stop-bare                  # step 4 — must be refused
 #   ./scripts/s1a-verify.sh stop    "<reason>"         # step 6
+#   ./scripts/s1a-verify.sh cap                        # the effective cap, rebuilt from the chain
 #   ./scripts/s1a-verify.sh story                      # read the chain back
+#
+# Every step declares the status the contract requires and CHECKS it, exiting non-zero when the
+# server answers something else. Steps 2 and 4 exist to prove a refusal happens; a refusal that
+# quietly stopped happening would otherwise look exactly like a passing run.
 #
 # This writes to a THROWAWAY experiment id by default (exp-verify-<UTC date>), never the real
 # exp-001 — a verification run must not spend the first experiment's append-only history on a test.
@@ -54,25 +59,85 @@ money() {
   esac
 }
 
+# The stored chain for this experiment/version, as raw JSON. Exit 2 on any failure to reach it,
+# which every caller treats as "cannot confirm" rather than as "nothing is there".
+chain() {
+  kubectl -n "$NS" exec deploy/growth-core -c app -- node -e '
+    const http = require("http");
+    http.get({ host: "localhost", port: 3376, path: process.argv[1] }, (res) => {
+      let d = ""; res.on("data", (c) => (d += c));
+      res.on("end", () => {
+        if (res.statusCode !== 200) process.exit(2);
+        process.stdout.write(d);
+      });
+    }).on("error", () => process.exit(2));
+  ' "/governance/decisions?experimentId=$EXPERIMENT&experimentVersion=$VERSION"
+}
+
 # Exit 0 iff a launch artefact already exists for this experiment/version. Used to stop the `edit`
 # probe from being the FIRST write of the launch id: that id is deterministic, so an edit run before
 # launch would create the artefact carrying its sentinel text as canonical — the exact incident of
-# 2026-07-23. Exit 2 (query failed) is treated as "cannot confirm", and the probe refuses too.
+# 2026-07-23. A failed query is "cannot confirm", and the probe refuses then too.
 launch_exists() {
-  kubectl -n "$NS" exec deploy/growth-core -c app -- node -e '
-    const http = require("http");
-    const [path, id] = process.argv.slice(1);
-    http.get({ host: "localhost", port: 3376, path }, (res) => {
-      let d = ""; res.on("data", (c) => (d += c));
-      res.on("end", () => {
-        try { const a = JSON.parse(d); process.exit(Array.isArray(a) && a.some((x) => x.decisionArtefactId === id) ? 0 : 1); }
-        catch { process.exit(2); }
-      });
-    }).on("error", () => process.exit(2));
-  ' "/governance/decisions?experimentId=$EXPERIMENT&experimentVersion=$VERSION" "$LAUNCH_ID"
+  local body
+  body=$(chain) || return 2
+  printf '%s' "$body" | python3 -c '
+import json, sys
+try:
+    a = json.load(sys.stdin)
+except Exception:
+    sys.exit(2)
+sys.exit(0 if any(x.get("decisionType") == "experiment.launch" for x in a) else 1)
+'
 }
 
-call() { # method path [body]
+# The artefact that currently holds the budget cap, printed as "<id> <value> <currency>".
+#
+# Read from the server rather than assumed, because the alternative is asking the operator to
+# remember. `previousBudgetCap` used to come from $BUDGET: correct only while the same shell that
+# launched also raises the budget, and rule V7 rejects a mismatch — so a verification run could
+# fail on the operator's environment while the server was behaving perfectly. The current cap is
+# the artefact nothing supersedes, which is the same definition the contract uses (C-001 V6), so
+# this also targets a second budget change at the first one instead of always at the launch.
+current_cap() {
+  local body
+  body=$(chain) || return 2
+  printf '%s' "$body" | python3 -c '
+import json, sys
+try:
+    artefacts = json.load(sys.stdin)
+except Exception:
+    sys.exit(2)
+
+superseded = {a.get("supersedesArtefactId") for a in artefacts if a.get("supersedesArtefactId")}
+
+def cap(a):
+    if a.get("decisionType") == "experiment.launch":
+        return a["plannedAction"]["budgetCap"]
+    if a.get("decisionType") == "experiment.budget_change":
+        return a["newBudgetCap"]
+    return None
+
+holders = [a for a in artefacts if cap(a) and a["decisionArtefactId"] not in superseded]
+if not holders:
+    sys.exit(1)
+
+# One is the only correct answer (a partial unique index enforces it). Sorting keeps the script
+# deterministic rather than accidentally right if that ever stops holding.
+holder = sorted(holders, key=lambda a: a["decidedAt"])[-1]
+money = cap(holder)
+print(holder["decisionArtefactId"], money["value"], money["currency"])
+'
+}
+
+# call METHOD PATH [BODY] [EXPECTED_STATUS]
+#
+# The expected status is checked here rather than printed for the reader to check. A step whose
+# server answered 200 where the contract says 409 used to look identical to a passing one: same
+# output, same exit code, and the eye slides over a number it already believes. The whole point of
+# steps 2 and 4 is that a REFUSAL happens, so a refusal that silently stopped happening is exactly
+# the regression this script exists to catch.
+call() {
   # DRY_RUN=1 prints what would be sent and stops. Worth using once first: decision_artefact is
   # append-only, so anything this writes to production is there permanently — including a typo.
   if [ -n "${DRY_RUN:-}" ]; then
@@ -80,7 +145,9 @@ call() { # method path [body]
     [ -n "${3:-}" ] && printf '%s\n' "$3" | python3 -m json.tool
     return 0
   fi
-  kubectl -n "$NS" exec deploy/growth-core -c app -- node -e '
+
+  local out status
+  out=$(kubectl -n "$NS" exec deploy/growth-core -c app -- node -e '
     const http = require("http");
     const [method, path, body] = process.argv.slice(1);
     const opts = { host: "localhost", port: 3376, path, method,
@@ -95,7 +162,20 @@ call() { # method path [body]
     req.on("error", (e) => { console.log("ERROR", e.message); process.exit(1); });
     if (body) req.write(body);
     req.end();
-  ' "$1" "$2" "${3:-}"
+  ' "$1" "$2" "${3:-}")
+  printf '%s\n' "$out"
+  LAST_BODY="$out"
+
+  local expected="${4:-}"
+  [ -n "$expected" ] || return 0
+
+  status=$(printf '%s' "$out" | sed -n 's/^HTTP \([0-9]*\).*/\1/p' | head -1)
+  if [ "$status" = "$expected" ]; then
+    echo "   ✓ HTTP $status, as the contract requires"
+  else
+    echo "   ✗ EXPECTED HTTP $expected, GOT ${status:-no status at all}" >&2
+    return 1
+  fi
 }
 
 common() { cat <<JSON
@@ -128,6 +208,15 @@ case "${1:-}" in
         \"endAt\": \"$(date -u -d '+7 days' +%Y-%m-%dT00:00:00Z)\"
       }
     }"
+    # 201 and 200 are both correct here — the second is an identical re-run, which is exactly what
+    # a client-generated id is for — so this one step checks the pair rather than a single value.
+    if [ -z "${DRY_RUN:-}" ]; then
+      case "$(printf '%s' "$LAST_BODY" | sed -n 's/^HTTP \([0-9]*\).*/\1/p' | head -1)" in
+        201) echo "   ✓ HTTP 201 — the launch artefact was written" ;;
+        200) echo "   ✓ HTTP 200 — identical re-run, the stored artefact is unchanged" ;;
+        *)   echo "   ✗ EXPECTED HTTP 201 (or 200 on a re-run)" >&2; exit 1 ;;
+      esac
+    fi
     ;;
 
   edit)
@@ -154,24 +243,48 @@ case "${1:-}" in
         \"startAt\": \"$(date -u +%Y-%m-%dT00:00:00Z)\",
         \"endAt\": \"$(date -u -d '+7 days' +%Y-%m-%dT00:00:00Z)\"
       }
-    }"
-    echo
-    echo "   Expected: 409 conflict (same id, different content)."
+    }" 409
+    echo "   A 409 is the append-only guarantee answering: same id, different content, refused."
     ;;
 
   budget)
     [ $# -eq 3 ] || { echo "usage: $0 budget \"<reason>\" <newCap e.g. 2500.00>" >&2; exit 1; }
     echo "── step 5: raise the budget mid-run (expect 201)"
+
+    # Read the cap being replaced from the record instead of from $BUDGET. Rule V7 rejects a
+    # previousBudgetCap that disagrees with the artefact being superseded, so the old version
+    # failed whenever the budget step ran in a different shell from the launch — a verification
+    # run reporting a problem that was the operator's environment, not the server's behaviour.
+    SUPERSEDES="$LAUNCH_ID"
+    PREV_VALUE=$(money "${BUDGET:-1000.00}")
+    PREV_CURRENCY="CZK"
+
+    if [ -z "${DRY_RUN:-}" ]; then
+      set +e
+      CAP=$(current_cap); CAP_STATUS=$?
+      set -e
+      case "$CAP_STATUS" in
+        0) read -r SUPERSEDES PREV_VALUE PREV_CURRENCY <<<"$CAP"
+           echo "   current cap, read back from the record: $PREV_VALUE $PREV_CURRENCY (held by $SUPERSEDES)" ;;
+        1) echo "   REFUSED: no artefact holds a budget cap for $EXPERIMENT/$VERSION — run 'launch' first." >&2
+           exit 1 ;;
+        *) echo "   REFUSED: could not read the decision chain, so the cap being replaced is unknown." >&2
+           echo "   Sending a guessed previousBudgetCap would either be rejected by rule V7 or, worse," >&2
+           echo "   be accepted against an artefact you did not mean. Nothing was sent." >&2
+           exit 1 ;;
+      esac
+    fi
+
     call POST /governance/decisions "{
       $(common),
       \"decisionArtefactId\": \"$CHANGE_ID\",
       \"decisionType\": \"experiment.budget_change\",
       \"reason\": $(jstr "$2"),
-      \"supersedesArtefactId\": \"$LAUNCH_ID\",
-      \"previousBudgetCap\": { \"value\": \"$(money "${BUDGET:-1000.00}")\", \"currency\": \"CZK\" },
-      \"newBudgetCap\": { \"value\": \"$(money "$3")\", \"currency\": \"CZK\" },
+      \"supersedesArtefactId\": \"$SUPERSEDES\",
+      \"previousBudgetCap\": { \"value\": \"$(money "$PREV_VALUE")\", \"currency\": \"$PREV_CURRENCY\" },
+      \"newBudgetCap\": { \"value\": \"$(money "$3")\", \"currency\": \"$PREV_CURRENCY\" },
       \"effectiveFrom\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-    }"
+    }" 201
     ;;
 
   stop-bare)
@@ -182,9 +295,19 @@ case "${1:-}" in
       \"decisionType\": \"experiment.stop\",
       \"reason\": \"   \",
       \"stoppedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-    }"
-    echo
-    echo "   Expected: 422. Blank free text is rejected, not defaulted."
+    }" 422
+    # A 422 alone would not prove this step. The server also answers 422 when no launch exists for
+    # the experiment (rule V5), so on a fresh throwaway id this could pass while the blank-reason
+    # rule was never exercised at all — the step would be checking the operator's ordering instead
+    # of the contract.
+    if [ -z "${DRY_RUN:-}" ]; then
+      if printf '%s' "$LAST_BODY" | grep -q '"path": "/reason"'; then
+        echo "   ✓ refused on /reason — blank free text is rejected, not defaulted"
+      else
+        echo "   ✗ 422, but NOT for the blank reason — read the failures above" >&2
+        exit 1
+      fi
+    fi
     ;;
 
   stop)
@@ -196,7 +319,27 @@ case "${1:-}" in
       \"decisionType\": \"experiment.stop\",
       \"reason\": $(jstr "$2"),
       \"stoppedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-    }"
+    }" 201
+    ;;
+
+  cap)
+    # F-001 step 5 asks for more than "the change was recorded": the effective cap has to be
+    # RECONSTRUCTABLE from the chain. This prints what the record says it is, by the contract's own
+    # definition — the artefact nothing supersedes — rather than by anyone's memory of the raise.
+    echo "── the effective budget cap for $EXPERIMENT/$VERSION, rebuilt from the chain"
+    set +e
+    CAP=$(current_cap); CAP_STATUS=$?
+    set -e
+    case "$CAP_STATUS" in
+      0) read -r HOLDER VALUE CURRENCY <<<"$CAP"
+         # Printed exactly as stored, NOT through money(). This command answers "what does the
+         # record say", and padding "1100" to "1100.00" here would hide a scale inconsistency
+         # instead of showing it — which is the opposite of what an audit read is for.
+         echo "   $VALUE $CURRENCY"
+         echo "   established by $HOLDER, superseded by nothing" ;;
+      1) echo "   no artefact holds a cap — nothing has been launched for this experiment/version" ;;
+      *) echo "   could not read the decision chain" >&2; exit 1 ;;
+    esac
     ;;
 
   story)

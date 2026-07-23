@@ -234,6 +234,37 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       way. The 2026-07-23 incident (edit-before-launch storing sentinel text as canonical) can no
       longer happen.
 
+- [x] **`s1a-verify.sh` — two remaining defects fixed 2026-07-23, both falsified before trusting.**
+
+      **(a) The script checked nothing.** Every step printed `HTTP nnn` and exited 0 whatever the
+      server answered, so the two steps whose entire purpose is a REFUSAL — step 2 (409) and step 4
+      (422) — would have looked identical to a passing run if the refusal had quietly stopped
+      happening. Each step now declares the status the contract requires and exits non-zero on
+      anything else. Step 4 additionally asserts the failure is on `/reason`: a 422 alone does not
+      prove it, because the server also answers 422 when no launch exists (rule V5), so on a fresh
+      throwaway id the step could have passed while the blank-reason rule was never exercised.
+
+      **(b) `previousBudgetCap` came from `$BUDGET`.** Correct only while the same shell that
+      launched also raises the budget. Rule V7 rejects a mismatch, so a verification run could fail
+      on the operator's environment while the server behaved perfectly. The cap is now read back
+      from the record — the artefact nothing supersedes, the contract's own definition (V6) — which
+      also targets a second budget change at the first one instead of always at the launch. If the
+      chain cannot be read, the step refuses rather than guessing.
+
+      **New `cap` subcommand.** F-001 step 5 asks for more than "the change was recorded": the
+      effective cap must be *reconstructable from the chain*. `./scripts/s1a-verify.sh cap` prints
+      it, by the contract's definition rather than from memory. It prints the value exactly as
+      stored, deliberately not through `money()` — padding `1100` to `1100.00` in an audit read
+      would hide a scale inconsistency instead of showing it.
+
+      **Verified against production, writing nothing.** `edit` on `exp-001/v1` → 409 ✓,
+      `stop-bare` → 422 ✓ and refused on `/reason` ✓, `cap` → `1100 CZK, established by
+      59f3977c…, superseded by nothing`, which matches the real 1000 → 1100 chain. Then
+      **falsified**: an expectation flipped to 200 exits 1 (`✗ EXPECTED HTTP 200, GOT 409`), and a
+      non-blank reason sent where no launch exists produces 422-for-the-wrong-rule and exits 1. A
+      check that has never failed is not known to work. `exp-001/v1` still holds exactly 3
+      artefacts and `exp-falsify-check` holds none — every probe was rejected, as designed.
+
 - [ ] **No dead-letter queue on the attribution consumer.** A message that cannot be parsed is
       dropped with its raw body logged; a message whose join fails is requeued and will retry
       forever. Neither is wrong at this volume, but a real DLQ is the follow-up — the same gap
