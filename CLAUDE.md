@@ -60,7 +60,12 @@ GET  /health
 **None of these may be added to an ingress.** The experiment screen shows spend and lead counts,
 and `growth-web` — the only publicly routed container here — has no authentication at all. The
 owner reaches the screen with `kubectl -n statex-apps port-forward deploy/growth-core 3376:3376`.
-Publishing it needs an authenticated surface (S1b) and is an owner decision (C-006 §6.8).
+
+The owner decided on 2026-07-23 how it gets published: behind a real login through
+`auth-microservice`, in slice **S6c** (the cabinet), gated on **S1b**. Basic auth behind an ingress
+was offered and refused. Until S6c ships this paragraph stands unchanged — the absence of a route is
+the access control, and no ingress path may be added ahead of that slice. See
+`docs/08_roadmap/DELIVERY_PLAN.md` §10 and C-006 §6.8.
 
 ## Commands
 

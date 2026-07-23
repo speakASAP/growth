@@ -74,10 +74,11 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 | # | Slice | Required owners | Milestone | Status |
 |---|---|---|---|---|
 | **S1a** | **Decision record** — `DecisionArtefact` + canonical hash | growth-core (`services/core/`) | M1 | 🔨 **IMPL подтверждён владельцем как корректный (2026-07-21)**, развёрнут в проде. Остаётся только ручная проверка F-001 (`./scripts/s1a-verify.sh`) — гейт VERIFY не закрыт · [F-001](../10_features/F-001-decision-record-and-governance.md) · [C-001](../23_documentation_contracts/C-001-decision-record.md) · [D-004](../07_decisions/D-004-decision-artefact-shape-and-hash.md) |
-| **S1b** | Execution governance — `ApprovalGrant` + `approvedParametersHash`, `ExecutionAttempt` + `effectKey`, budget ceilings, fix in-memory idempotency | goalkeeper · growth-core | **M3** — не нужен до первой записи в API | ◷ |
+| **S1b** | Execution governance — `ApprovalGrant` + `approvedParametersHash`, `ExecutionAttempt` + `effectKey`, budget ceilings, fix in-memory idempotency, **аутентифицированная поверхность владельца** (вход через `auth-microservice`) | goalkeeper · growth-core · **auth** | **M3** — не нужен до первой записи в API | ◷ Блокирует **S9** и **S6c**. Вход в браузере в исходный объём среза не входил — добавлен 2026-07-23, см. «Найдено при планировании кабинета» |
 | **S5** | Landing runtime, durable edge→core ingestion, consent evidence, UTM + click-ID, `AnonymousTouchpoint`, `IdentityLink` | growth-web · growth-core · **auth** · bazos · leads | M1 | 🔨 **W1 (приём + консьюмер), W6, W3, W4 готовы — `IdentityLink` строится в проде.** Клик на bazos с подписанной `gsid` плюс регистрация через auth дают одну связку; проверено сквозь реальные сервисы 2026-07-22. Осталось: **W2** (лендинг, `AnonymousTouchpoint`, установка cookie — без него `gsid` всегда отсутствует) и **W5** (лиды) · [EP-005](../21_execution_plans/EP-005-landing-and-ingestion.md) |
 | **S6** | Qualification — `LeadQualificationEvent`, `criteriaVersion: v1-owner-manual`, manual marking surface, `ManualSpendObservation` | leads · growth-core | M1 | ✅ **Развёрнуто и проверено в проде 2026-07-22.** Миграция 006 применена, миграция Prisma в leads применена. Проверено на реальных сервисах: лид доходит до `qualification.lead` из очереди `growth.lead-created` по всей цепочке от лендинга; вердикт из админ-панели `leads` доходит до `qualification.lead_qualification`; исправление **добавляет** строку, а `UPDATE`/`DELETE` под runtime-ролью отклоняются (`permission denied`); `POST /spend/observations` сохраняет наблюдение и публикует его в `growth.events` · [F-006](../10_features/F-006-qualification-and-spend.md) · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) |
 | **S6b** | Витрина эксперимента — read-API и экран владельца | growth-core | M1 | ✅ **Развёрнуто и проверено в проде 2026-07-22.** `GET /experiments/:id/report` и экран `GET /experiments/:id` с формой ввода расходов. Стоимость регистрации, стоимость квалифицированного лида, разбивка attributed/unattributed, производный `pending`. Деньги — десятичные строки (BigInt, scale 4), деление округляется half-up до 2 знаков, деление на ноль даёт `—`, а не 0/NaN. Только на growth-core, **без ingress** · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) §6 |
+| **S6c** | **Личный кабинет владельца** — запись решений из GUI вместо `scripts/s1a-verify.sh`: гипотеза, бюджет, причина изменения бюджета, причина остановки, расходы, отчёт | growth-core · **auth** | **M3** — вместе с S1b | ⏸ **Заблокирован S1b** (решение владельца, 2026-07-23: ждём настоящий вход через `auth-microservice`, а не Basic-пароль). Объём и находки — §10 |
 | **S7** | **Universal revenue adapter** — canonical `revenue.recognised`, flipflop as first client (§6) | orders · payments · growth-core · flipflop | M2 | ◷ |
 | **S8** | Google Ads connector — read-only metrics, `SpendObservation` + reconciliation | growth-core | M2 | ◷ |
 | **S9** | Google Ads connector — approved writes, execution reconciliation, connector failure states | growth-core · goalkeeper | M3 | ◷ |
@@ -187,6 +188,7 @@ Parallel work runs freely **between** milestones. At each milestone all active w
 | Lead → order attribution | — | 🔨 S7 | — | 🔨 S7 | — | — | ✅ **exists** | — | 🔨 S7 |
 | `revenue.recognised` | — | — | — | 🔨 S7 | — | — | 🔨 S7 | 🔨 S7 | 🔨 S7 |
 | Money reversal events | — | — | — | 🔨 S7 | — | — | 🔨 S7 | 🔨 S7 | — |
+| Owner cabinet (GUI записи решений) | — | — | — | ◷ S6c | — | — | — | — | — |
 | Ad connector | — | — | — | 🔨 S8/S9 | — | — | — | — | — |
 | Conversion upload | — | 🔨 S10 | — | 🔨 S10 | — | — | — | — | — |
 
@@ -299,3 +301,70 @@ Each slice gets `growth/docs/10_features/F-NNN-<name>.md`:
 ```
 
 Mirrors the standard's required execution-plan fields.
+
+---
+
+## 10. S6c — личный кабинет владельца (решение владельца 2026-07-23)
+
+**Требование владельца, дословно:** «мне удобнее этим управлять из GUI, а не командной строки».
+Это не удобство поверх работающего процесса — это условие того, что решения вообще будут
+записываться. Запись решения, которая требует собрать JSON в bash, конкурирует с двумя минутами в
+Google Ads UI и проигрывает; тогда `decision_artefact` пустеет, а платформа перестаёт знать, почему
+были потрачены деньги. Ровно этот довод уже зафиксирован в
+[F-001](../10_features/F-001-decision-record-and-governance.md) как причина, по которой изменение
+бюджета сделано отдельным типом артефакта, а не «остановить и перезапустить».
+
+### Первый функционал (объём среза)
+
+| Экран / действие | Что пишет | Чем уже обеспечено |
+|---|---|---|
+| Список экспериментов | ничего | `DecisionRepository` — нужен новый read-метод «различные experimentId» |
+| Запуск эксперимента — гипотеза, обоснование, бюджет, даты | `experiment.launch` | `DecisionService.record` |
+| Изменение бюджета — причина + новый потолок | `experiment.budget_change` | то же; `supersedesArtefactId` и `previousBudgetCap` подставляет сервер, а не человек |
+| Остановка — причина | `experiment.stop` | то же |
+| Ввод расходов | `manual_observation` | `SpendService.record` (S6) |
+| Отчёт: расход, стоимость регистрации, стоимость квалифицированного лида, attributed/unattributed, pending | ничего | `ExperimentReportService` (S6b) |
+| История решений одного эксперимента — «почему» подряд | ничего | `GET /governance/decisions` (S1a) |
+
+Ни одной новой таблицы и ни одной миграции: весь срез — экраны поверх сервисов, которые уже
+написаны, задеплоены и покрыты тестами. Дорогая часть здесь не код, а DOC и CONTRACT
+(`F-007`, `C-007`), которые пишутся первыми по гейтам §2.
+
+**Два требования к экранам, которые нельзя потерять при реализации:**
+
+1. **Отказы должны читаться, а не выпадать JSON-страницей исключения.** Пустая причина остановки
+   (422) и попытка переписать существующий артефакт (409) — это поведение, которое срез обязан
+   показывать владельцу словами. Без этого ручную проверку F-001 нельзя выполнить через кабинет.
+2. **Предпросмотр артефакта перед записью.** `decision_artefact` append-only: опечатка в гипотезе
+   остаётся навсегда, исправляется только новым артефактом. У CLI эту роль выполняет `DRY_RUN=1`;
+   в GUI её должен выполнять шаг подтверждения.
+
+### Найдено при планировании кабинета (2026-07-23)
+
+**В плане не было интерфейса для записи решений — вообще.** Единственный экран, который план
+предусматривал, это витрина S6b: отчёт и форма расходов. Запуск, изменение бюджета и остановка
+существовали только как API и `scripts/s1a-verify.sh`. Владелец спросил, стоит ли кабинет в очереди
+на реализацию; честный ответ был «нет, ждать нечего», и срез заведён именно поэтому.
+[ARCHITECTURE](../06_architecture/ARCHITECTURE.md) откладывала это осознанно — «version-management
+UI **may wait**» при обязательном неизменяемом снимке запуска — то есть отложен был интерфейс, а не
+запись; кабинет эту отсрочку закрывает и снимка не трогает.
+
+**S1b не содержал входа в браузере, хотя весь репозиторий ссылается на него как на
+«аутентифицированную поверхность».** Объём S1b по F-001 — это `ApprovalGrant`,
+`approvedParametersHash`, `ExecutionAttempt`/`effectKey`, потолки бюджета и сверка: механика
+авторизации **вызовов API**. Гранты авторизуют исполнение, они не логинят человека. Если бы срез
+кабинета просто «ждал S1b», он ждал бы того, чего в S1b не написано. Поэтому вход владельца
+(`POST /auth/login` → сессионная cookie → проверка через `POST /auth/validate` в
+`auth-microservice`, который уже это умеет) добавлен в объём S1b явной строкой, а S6c от него
+зависит.
+
+**Цена решения владельца названа прямо:** S1b стоит на **M3**, значит кабинет появляется на M3, а
+до тех пор решения пишутся через `scripts/s1a-verify.sh`. Альтернативы — публикация за
+Basic-паролем из Vault или кабинет на `port-forward` без ingress — владельцем **отклонены**
+2026-07-23 в пользу настоящего входа. Если ожидание окажется дороже, чем кажется, ускорять надо не
+кабинет, а вход в S1b: остальной объём среза от него не зависит.
+
+**Кабинет не управляет Google Ads и не притворяется, что управляет.** Коннектора нет: чтение метрик
+— S8, записи — S9, оба ◷. Бюджет по-прежнему поднимается руками в Google Ads UI, а кабинет
+записывает, почему владелец это сделал. Экран, на котором «поднять бюджет» выглядит как действие
+над кампанией, был бы ложью интерфейса — формулировки в S6c обязаны говорить «записать решение».

@@ -321,6 +321,14 @@ implementer's — see §6.8.
 Publishing the screen on a public hostname. It needs a real authenticated surface first; adding a
 path to an ingress is what would expose it, and this slice adds none.
 
+**Decided by the owner, 2026-07-23 — recorded here, still not done in this slice.** The screen, and
+the decision-recording cabinet it grows into, are published only behind a login through
+`auth-microservice`. That work is slice **S6c**, gated on **S1b**, and it does not change anything
+this contract specifies: the endpoints, the numbers and their failure semantics stay as written
+above, and until S6c ships `growth-core` has no ingress and `port-forward` remains the access
+control. HTTP Basic behind an ingress was offered as the faster route and refused. See
+`../08_roadmap/DELIVERY_PLAN.md` §10.
+
 ---
 
 ## 7. Not in this contract

@@ -145,6 +145,77 @@ describe('the current verdict', () => {
     expect(history[0].supersedesQualificationId).toBe('q-1');
   });
 
+  // C-006 §1.2 defines a correction by the edge it carries, not by its clock. These are the shapes
+  // where the two disagree; each one silently moved costPerQualifiedLead before the chain was read.
+  it('follows the correction chain rather than the later judgement that supersedes nothing', async () => {
+    await repository.saveLead(lead('lead-1'));
+    await repository.saveQualification(judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'));
+    await repository.saveQualification({
+      ...judgement('q-2', 'lead-1', 'disqualified', '2026-07-22T12:00:00Z'),
+      supersedesQualificationId: 'q-1',
+    });
+    // Supersedes nothing, so it is a first judgement — a re-emission of one, not a correction of
+    // the chain, however late its clock says it was decided.
+    await repository.saveQualification(judgement('q-3', 'lead-1', 'qualified', '2026-07-22T13:00:00Z'));
+
+    const verdicts = await repository.currentVerdicts('bazos');
+    expect(verdicts[0].verdict).toBe('disqualified');
+  });
+
+  it('resolves a correction that shares its decided_at with what it supersedes', async () => {
+    await repository.saveLead(lead('lead-1'));
+    // Correction stored first: received_at cannot break this tie either.
+    await repository.saveQualification({
+      ...judgement('q-2', 'lead-1', 'disqualified', '2026-07-22T11:00:00Z'),
+      supersedesQualificationId: 'q-1',
+    });
+    await repository.saveQualification(judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'));
+
+    const verdicts = await repository.currentVerdicts('bazos');
+    expect(verdicts[0].verdict).toBe('disqualified');
+  });
+
+  it('prefers the longest chain when two judgements supersede different predecessors', async () => {
+    await repository.saveLead(lead('lead-1'));
+    await repository.saveQualification(judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'));
+    await repository.saveQualification({
+      ...judgement('q-2', 'lead-1', 'qualified', '2026-07-22T12:00:00Z'),
+      supersedesQualificationId: 'q-1',
+    });
+    await repository.saveQualification({
+      ...judgement('q-3', 'lead-1', 'disqualified', '2026-07-22T13:00:00Z'),
+      supersedesQualificationId: 'q-2',
+    });
+    // A stray second-generation correction off the same root, decided later by the clock but one
+    // correction shallower.
+    await repository.saveQualification({
+      ...judgement('q-4', 'lead-1', 'qualified', '2026-07-22T14:00:00Z'),
+      supersedesQualificationId: 'q-1',
+    });
+
+    const verdicts = await repository.currentVerdicts('bazos');
+    expect(verdicts[0].verdict).toBe('disqualified');
+  });
+
+  // Ids are producer-supplied, so a cycle is reachable by a broken producer. It must answer, and
+  // answer the same way twice, rather than recurse until the report endpoint gives up.
+  it('still answers when the chain is a cycle', async () => {
+    await repository.saveLead(lead('lead-1'));
+    await repository.saveQualification({
+      ...judgement('q-1', 'lead-1', 'qualified', '2026-07-22T11:00:00Z'),
+      supersedesQualificationId: 'q-2',
+    });
+    await repository.saveQualification({
+      ...judgement('q-2', 'lead-1', 'disqualified', '2026-07-22T12:00:00Z'),
+      supersedesQualificationId: 'q-1',
+    });
+
+    const first = await repository.currentVerdicts('bazos');
+    const second = await repository.currentVerdicts('bazos');
+    expect(first[0].verdict).toBe('disqualified');
+    expect(second).toEqual(first);
+  });
+
   it('scopes verdicts to the workspace', async () => {
     await repository.saveLead(lead('lead-1'));
     await repository.saveLead({ ...lead('lead-2'), workspaceId: 'other' });

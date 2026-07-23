@@ -3,7 +3,8 @@
   "health": "ok",
   "deployed": "S5 yes. S6 yes — deployed 2026-07-22, migration 006 applied in production, and all four write/consume paths exercised against real services. S6b (read API + owner screen) deployed 2026-07-22.",
   "slice": "S6b",
-  "gate": "S1a IMPL owner-confirmed, VERIFY (F-001 manual check) still pending. S5 complete and live. S6 DOC+CONTRACT+IMPL+VERIFY complete. S6b DOC+CONTRACT+IMPL+VERIFY complete.",
+  "gate": "S1a IMPL owner-confirmed; VERIFY 5 of 6 steps run and passed by the owner 2026-07-23 (launch 201, edit 409, stop-bare 422, budget 201, stop 201, story reads back). Only step 3 — the three-day read-back (~2026-07-26) — remains; the gate and M1 close there, not before. S5 complete and live. S6 DOC+CONTRACT+IMPL+VERIFY complete. S6b DOC+CONTRACT+IMPL+VERIFY complete.",
+  "s1a_verify": "Run against exp-001/v1 through the pod 2026-07-23. exp-001/v1 now holds a VERIFICATION chain (launch+budget_change+stop), NOT the real first experiment: its stop reason is a test and its launch text carries a stray line break from a multi-line shell paste. Owner decision 2026-07-23: leave v1 as the verify record; the REAL first experiment launches under EXPERIMENT_VERSION=v2. Incident, resolved: edit (step 2) ran before launch (step 1), so the sentinel 'EDITED...' text became the canonical launch under the deterministic id and the real launch hit 409; the one poisoned row was removed via the documented trigger-bypass (DISABLE/ENABLE decision_artefact_immutable inside the delete txn, as 2026-07-22) and the trigger re-verified enabled (pg_trigger.tgenabled='O'). Two follow-ups filed in TASKS.md: (1) s1a-verify.sh defaults to the real exp-001 and its edit probe can create the launch if run first — must default to a throwaway id and refuse to be the first write; (2) budget accepted newBudgetCap '1100' without the 2dp previousBudgetCap carries.",
   "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 (bazos.alfares.cz/l)",
   "containers": {
     "growth-core": {
@@ -56,6 +57,16 @@
     }
   },
   "notes": "growth-core 276 tests (baseline 243 before S6b, +33 new, 24 suites, no baseline test lost), leads-microservice 174, growth-web 33. Verified in production 2026-07-22: the full S6 chain and the S6b report. TEST DATA REMOVED 2026-07-22 on owner instruction — growth_core is empty (every table 0 rows), and the leads/auth artefacts of the verification run are gone. exp-001 no longer carries the 1750.5000 CZK it never spent. Deleting governance.decision_artefact required disabling its immutability trigger inside the deleting transaction; the trigger was re-enabled and then re-proven to refuse a DELETE. The 610 accounts matching %@example.invalid predate S6, belong to other smoke tests, and were deliberately NOT touched. See TASKS.md.",
+  "s6c": {
+    "status": "PLANNED, blocked by S1b. No code exists. Added to the delivery plan 2026-07-23 on owner decision.",
+    "what": "The owner's cabinet — decisions recorded from a browser instead of scripts/s1a-verify.sh: hypothesis, budget, reason for a budget change, reason for a stop, spend entry, report, and the decision history of one experiment read back as a story.",
+    "why": "Owner requirement: a decision record that costs a hand-assembled JSON in bash loses to two minutes in the Google Ads UI, and then decision_artefact is empty and nothing knows why the money was spent.",
+    "blockedBy": "S1b, whose scope was extended on 2026-07-23 to include the owner's browser login (POST /auth/login -> session cookie -> POST /auth/validate against auth-microservice). Grants authorise API calls; they do not log a human in, so without that addition S6c would have been waiting for something S1b never produced.",
+    "milestone": "M3, because S1b is M3. Until then decisions are written with scripts/s1a-verify.sh.",
+    "buildsOn": "No new table and no migration. DecisionService (S1a), SpendService (S6) and ExperimentReportService (S6b) already carry every write and every number.",
+    "notInScope": "Google Ads itself. No connector exists (S8 read, S9 write, both planned), so the cabinet records decisions and never changes a live campaign.",
+    "scope": "docs/08_roadmap/DELIVERY_PLAN.md §10"
+  },
   "attribution": {
     "schema": "attribution",
     "tables": "auth_redirect, registration, identity_link",
@@ -69,7 +80,7 @@
     "divisionSafety": "Zero registrations or zero qualified -> null in the API, '—' on screen. Never 0, never NaN, never Infinity. Verified in production: the live report returned costPerQualifiedLead null with 0 qualified.",
     "mixedCurrency": "More than one currency in an experiment's observations -> no total and no cost metrics, with the reason stated on screen. Summing CZK and EUR would be wrong and look fine.",
     "exposure": "growth-core ONLY, which has no ingress. NOT on growth-web: growth-web is public on bazos.alfares.cz/l with no authentication, so an owner-only screen cannot live there. Owner reaches it via kubectl port-forward deploy/growth-core 3376:3376.",
-    "ownerDecisionNeeded": "Publishing the screen on a public hostname needs an authenticated surface (S1b) — NOT done, and deliberately not done unilaterally (C-006 §6.8).",
+    "ownerDecisionTaken": "2026-07-23: the screen is published only behind a real login through auth-microservice, as part of S6c, gated on S1b. HTTP Basic behind an ingress was offered and refused. Until then growth-core has no ingress and port-forward is the access control. C-006 §6.8.",
     "scopeGap": "qualification.lead has no experiment_id, so the report counts every lead in the WORKSPACE against the named experiment's spend. Correct for one experiment per workspace, wrong for two. C-006 §6.6."
   }
 }

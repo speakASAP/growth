@@ -30,6 +30,25 @@ LAUNCH_ID=$(uuid_for "$EXPERIMENT-$VERSION-launch")
 CHANGE_ID=$(uuid_for "$EXPERIMENT-$VERSION-budget")
 STOP_ID=$(uuid_for "$EXPERIMENT-$VERSION-stop")
 
+# Free-text fields, collapsed to single-spaced trimmed text and then JSON-encoded. A multi-line
+# shell paste inserts a literal newline plus the continuation indent into the argument; without
+# this it lands inside an append-only artefact, permanently, mid-sentence. `split()` folds every
+# run of whitespace (newlines included) to one space and trims the ends; json.dumps then makes any
+# quote or unicode safe. The text carries the same meaning, just without the stray break.
+jstr() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(" ".join(sys.stdin.read().split())))'; }
+
+# A money value, stored with cents. Whole numbers are convenient to type, but a chain that mixes
+# "1100" and "1000.00" reads as if the amounts were entered differently when they are equal. The
+# contract accepts either form (schema `^\d+(\.\d{1,4})?$`; the server compares them equal via
+# normaliseDecimal), so this is presentation only — a whole number gains ".00", a short fraction is
+# padded to two places, and an already-precise 3–4dp value is left untouched.
+money() {
+  case "$1" in
+    *.*) local i="${1%.*}" f="${1#*.}"; while [ "${#f}" -lt 2 ]; do f="${f}0"; done; printf '%s.%s' "$i" "$f" ;;
+    *)   printf '%s.00' "$1" ;;
+  esac
+}
+
 call() { # method path [body]
   # DRY_RUN=1 prints what would be sent and stops. Worth using once first: decision_artefact is
   # append-only, so anything this writes to production is there permanently — including a typo.
@@ -77,11 +96,11 @@ case "${1:-}" in
       $(common),
       \"decisionArtefactId\": \"$LAUNCH_ID\",
       \"decisionType\": \"experiment.launch\",
-      \"hypothesis\": $(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
-      \"rationale\": $(printf '%s' "$3" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
+      \"hypothesis\": $(jstr "$2"),
+      \"rationale\": $(jstr "$3"),
       \"plannedAction\": {
         \"platform\": \"google_ads\",
-        \"budgetCap\": { \"value\": \"${BUDGET:-1000.00}\", \"currency\": \"CZK\" },
+        \"budgetCap\": { \"value\": \"$(money "${BUDGET:-1000.00}")\", \"currency\": \"CZK\" },
         \"startAt\": \"$(date -u +%Y-%m-%dT00:00:00Z)\",
         \"endAt\": \"$(date -u -d '+7 days' +%Y-%m-%dT00:00:00Z)\"
       }
@@ -116,10 +135,10 @@ case "${1:-}" in
       $(common),
       \"decisionArtefactId\": \"$CHANGE_ID\",
       \"decisionType\": \"experiment.budget_change\",
-      \"reason\": $(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
+      \"reason\": $(jstr "$2"),
       \"supersedesArtefactId\": \"$LAUNCH_ID\",
-      \"previousBudgetCap\": { \"value\": \"${BUDGET:-1000.00}\", \"currency\": \"CZK\" },
-      \"newBudgetCap\": { \"value\": \"$3\", \"currency\": \"CZK\" },
+      \"previousBudgetCap\": { \"value\": \"$(money "${BUDGET:-1000.00}")\", \"currency\": \"CZK\" },
+      \"newBudgetCap\": { \"value\": \"$(money "$3")\", \"currency\": \"CZK\" },
       \"effectiveFrom\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
     }"
     ;;
@@ -144,7 +163,7 @@ case "${1:-}" in
       $(common),
       \"decisionArtefactId\": \"$STOP_ID\",
       \"decisionType\": \"experiment.stop\",
-      \"reason\": $(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
+      \"reason\": $(jstr "$2"),
       \"stoppedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
     }"
     ;;

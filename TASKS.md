@@ -61,12 +61,18 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       that latest-by-time is the definition and `supersedes` is audit-only. It should not stay
       ambiguous — the contract and the code currently say different things.
 
-- [ ] **Publishing the experiment screen on a public hostname — owner decision (C-006 §6.8).**
-      The screen is on growth-core, which has **no ingress**, and the owner reaches it with
-      `kubectl -n statex-apps port-forward deploy/growth-core 3376:3376`. It was **not** put on
-      growth-web: that is public on `bazos.alfares.cz/l` and has no authentication at all, so an
-      owner-only screen showing spend and lead counts cannot go there. Making it publicly reachable
-      needs a real authenticated surface (S1b) first. Not done, and not decided by an implementer.
+- [ ] **Publishing the experiment screen on a public hostname — DECIDED by the owner 2026-07-23
+      (C-006 §6.8).** The screen is on growth-core, which has **no ingress**, and the owner reaches
+      it with `kubectl -n statex-apps port-forward deploy/growth-core 3376:3376`. It was **not** put
+      on growth-web: that is public on `bazos.alfares.cz/l` and has no authentication at all, so an
+      owner-only screen showing spend and lead counts cannot go there.
+
+      **The decision: it gets published only behind a real login through `auth-microservice`, as
+      part of S6c, after S1b.** Basic auth from Vault was offered and refused — one shared password
+      in front of spend figures and lead counts is not the same thing as an authenticated surface,
+      and the difference stops mattering to nobody except the person whose numbers they are. Until
+      then `port-forward` remains the access control. Nothing here is an implementer's call to
+      revisit.
 
 - [ ] **The report counts leads per WORKSPACE, not per experiment (C-006 §6.6).**
       `qualification.lead` has no `experiment_id`; spend has no `campaignId` (below). So the report
@@ -119,31 +125,72 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       gap below: unparseable messages are dropped with the body logged, failed writes requeue
       forever.
 
-- [ ] **S1a VERIFY** — owner manual check from F-001. **The only thing standing between S1a and
-      done**, and it needs the owner, not an agent: steps 1, 5 and 6 are judgements about whether
-      the record reads back as a decision in your own words.
+- [ ] **S1a VERIFY — five of six steps run and passed by the owner, 2026-07-23. Only step 3
+      (the three-day read-back, ≈2026-07-26) remains.** This line stays open until then; the gate,
+      and with it M1, closes on step 3, not before.
 
-      > **Implementation confirmed correct by the owner, 2026-07-21.** That closes IMPL, not
-      > VERIFY. The six steps below have not been run, and this line stays open until they are —
-      > recording a check that did not happen, in the system whose entire purpose is a decision
-      > record you can trust, would be the one failure worth avoiding above all others here.
+      Run against `exp-001/v1` through the pod. Observed:
 
-      Run `./scripts/s1a-verify.sh` (add `DRY_RUN=1` first — `decision_artefact` is append-only,
-      so a typo committed to production stays there):
+      | Step | Expected | Got |
+      |---|---|---|
+      | 1 launch     | 201 | **201** — hypothesis in the owner's own words |
+      | 2 edit       | 409 | **409** — same id, different content, refused; original intact |
+      | 4 stop-bare  | 422 | **422** — blank `reason` fails `must match pattern "\S"` |
+      | 5 budget     | 201 | **201** — chain 1000 → 1100, `supersedesArtefactId` → launch |
+      | 6 stop       | 201 | **201** — reason recorded |
+      | story        | —   | reads back launch → budget_change → stop as one story |
 
-      ```
-      DRY_RUN=1 ./scripts/s1a-verify.sh launch "<hypothesis>" "<rationale>"
-                ./scripts/s1a-verify.sh launch "<hypothesis>" "<rationale>"   # 1 → 201
-                ./scripts/s1a-verify.sh edit                                  # 2 → 409 refused
-                ./scripts/s1a-verify.sh budget "<reason>" 2500.00             # 5 → 201
-                ./scripts/s1a-verify.sh stop-bare                             # 4 → 422 refused
-                ./scripts/s1a-verify.sh stop "<reason>"                       # 6 → 201
-                ./scripts/s1a-verify.sh story                                 # 3, 6 → read back
-      ```
+      Step 3 ("read it back three days later") cannot be scripted or hurried: come back to `story`
+      after a few days and see whether it still explains *why* without your memory of the day
+      filling the gaps. That is the whole feature — everything else is plumbing.
 
-      Step 3 ("read it back three days later") is the one that cannot be scripted or hurried: come
-      back to `story` after a few days and see whether it still explains *why*, without your memory
-      of the day filling the gaps. That is the whole feature — everything else is plumbing.
+      **What `exp-001/v1` now holds.** This run wrote a *verification* chain into the real first
+      experiment's id: a stop reason of "нужно проверить все объявления до запуска" and a launch
+      whose text carries a stray line break (`\n  `) from a multi-line shell paste. Owner decision
+      2026-07-23: **leave v1 as the verify record; the real first experiment launches under
+      `EXPERIMENT_VERSION=v2`**, composed carefully (not via a multi-line shell arg). Append-only,
+      so v1 stays as written — not touched again.
+
+      **Incident during this run (resolved).** `edit` (step 2) was executed before `launch`
+      (step 1). Because the launch id is deterministic, `edit` became the *first* write of that id
+      and stored its sentinel "EDITED — this text must never appear" as the canonical launch
+      artefact; the real launch then hit 409. Fixed by deleting that one row via the documented
+      trigger-bypass (`ALTER TABLE ... DISABLE TRIGGER decision_artefact_immutable` inside the
+      delete transaction, re-enabled in the same statement, exactly as 2026-07-22). Trigger
+      re-verified enabled afterwards: `pg_trigger.tgenabled = 'O'`.
+
+- [ ] **`s1a-verify.sh` can poison the real experiment's launch slot — fix before it is run again.**
+      Two root causes surfaced above. (a) The script defaults to `EXPERIMENT_ID=exp-001`, the real
+      first experiment — a verification run should default to a throwaway id (`exp-verify-*`, as the
+      2026-07-22 run used) so the real experiment's append-only history is never spent on a test.
+      (b) The `edit` probe will silently *create* the launch artefact if run before `launch`,
+      writing its sentinel text as canonical — the probe steps must refuse to be the first write of
+      an id (e.g. require the launch to already exist, or use a `If-Match`/precondition). Either
+      fix alone prevents a repeat; do both.
+
+- [x] **Money format — resolved in `s1a-verify.sh`, contract deliberately left permissive
+      (2026-07-23).** The chain had mixed `"1100"` and `"1000.00"`. Decision: **C-001 is not
+      changed.** The schema already accepts an integer (`^\d+(\.\d{1,4})?$`) and the server compares
+      amounts equal via `normaliseDecimal` (`"1100"` == `"1100.00"`), so the money layer works with
+      whole numbers end to end and these artefacts never leave the ecosystem in this form (no Google
+      Ads dependency on the string shape). Requiring `.00` in the contract would reject convenient
+      input for no correctness gain. Instead the script's new `money()` helper pads to 2dp for
+      presentation only — a whole number gains `.00`, a short fraction is padded, a 3–4dp value is
+      untouched — so a chain never *displays* mixed scales. Whole numbers stay convenient to type.
+
+- [x] **Line breaks from a multi-line shell paste — fixed in `s1a-verify.sh` (2026-07-23).** The
+      new `jstr()` helper folds every whitespace run (newlines included) to a single space and trims
+      before JSON-encoding, so a pasted continuation (`\n  `) can no longer land inside an
+      append-only artefact mid-sentence. Verified by dry-run. (The already-stored `exp-001/v1`
+      launch keeps its stray break — append-only, and the owner chose to leave v1 as the verify
+      record; the real launch under v2 will be clean.)
+
+- [ ] **`s1a-verify.sh` still defaults to the real `exp-001` and its `edit` probe can create the
+      launch — the poisoning root cause is NOT yet fixed.** Separate from the two fixes above.
+      (a) A verification run should default to a throwaway id (`exp-verify-*`) so the real
+      experiment's append-only history is never spent on a test. (b) The `edit` probe must refuse to
+      be the first write of an id (require the launch to already exist, or a precondition) so it
+      cannot store its sentinel text as the canonical launch. Either fix alone prevents a repeat.
 
 - [ ] **No dead-letter queue on the attribution consumer.** A message that cannot be parsed is
       dropped with its raw body logged; a message whose join fails is requeued and will retry
@@ -207,8 +254,33 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
 ## Later
 
 - [ ] **S1b** — ApprovalGrant, approvedParametersHash, ExecutionAttempt/effectKey, budget ceilings.
-      Blocks S9 (connector writes). Adds the first authenticated surface; revisit the
-      no-ingress decision then.
+      Blocks S9 (connector writes) **and S6c (the owner's cabinet)**. Adds the first authenticated
+      surface; revisit the no-ingress decision then.
+
+      **Its scope grew on 2026-07-23 and the reason matters.** Every reference to S1b in this
+      repository calls it "the authenticated surface", but what F-001 actually specifies is grant
+      machinery: `ApprovalGrant`, `approvedParametersHash`, `ExecutionAttempt`/`effectKey`, budget
+      ceilings, reconciliation. Grants authorise an API **call**; none of that logs a **human** in.
+      S6c waiting on S1b as written would have waited for something S1b never produced. The owner's
+      browser login — `POST /auth/login` → session cookie → `POST /auth/validate` against
+      `auth-microservice`, all of which already exists there — is now an explicit S1b deliverable.
+      If the cabinet is wanted sooner, this is the piece to pull forward; the rest of S6c depends on
+      nothing else that is missing.
+
+- [ ] **S6c — the owner's cabinet (GUI), blocked by S1b.** Owner decision 2026-07-23: decisions get
+      recorded from a browser instead of `scripts/s1a-verify.sh` — hypothesis, budget, reason for a
+      budget change, reason for a stop, spend, report. Not a convenience: a decision record that
+      costs a hand-assembled JSON in bash loses to two minutes in the Google Ads UI, and then
+      `decision_artefact` is empty and nothing knows why the money went. Scope, findings and the two
+      non-negotiable screen requirements (refusals rendered legibly; artefact preview before an
+      append-only write) are in `docs/08_roadmap/DELIVERY_PLAN.md` §10. No new table, no migration —
+      `DecisionService`, `SpendService` and `ExperimentReportService` already carry every write and
+      every number. DOC (`F-007`) and CONTRACT (`C-007`) come first, per the gates.
+
+      The owner rejected both faster routes on 2026-07-23 — Basic auth from Vault behind an ingress,
+      and cabinet-on-port-forward — in favour of a real login. Consequence, stated rather than
+      discovered later: S1b sits at **M3**, so the cabinet arrives at M3 and the CLI stays the way
+      decisions are written until then.
 - [ ] **S5 — `services/web/`** brings the first public surface. The ingress arrives with it and
       must route `growth.alfares.cz/` to `growth-web` only; `growth-core` stays off the public
       routing table. Pattern: `auth-microservice/k8s/ingress.yaml`.
