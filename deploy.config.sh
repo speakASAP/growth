@@ -25,7 +25,10 @@ IMAGES=(
 
 # deployment[i] = "k8s-deployment|container|image-name"
 DEPLOYMENTS=(
-  "growth-core|app|growth-core"
+  # "migrate" is an init container running this same image (node
+  # scripts/migrate.js); it must track the app tag, or migrations run from a
+  # stale build.
+  "growth-core|app,migrate|growth-core"
   "growth-web|app|growth-web"
 )
 
