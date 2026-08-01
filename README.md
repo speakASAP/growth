@@ -52,11 +52,9 @@ Follows the canonical Intent Preservation System layout used across the ecosyste
 
 - `/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md` — agent roles, parallel-work rules
 - `shared/AGENT_OPERATIONS.md` §Parallel Work
-- `shared/docs/PROJECT_AGENT_DOCS_STANDARD.md`
 
 ## Current state
 
-| | |
 |---|---|
 | Stage | Implementation started |
 | Active milestone | **MS-001 — Access and baseline** |
