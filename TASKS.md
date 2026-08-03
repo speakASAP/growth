@@ -4,6 +4,33 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
 
 ## Open
 
+- [ ] **M1 is now owner-side, not code-side (2026-08-01).** Every M1 slice — S1a, S5, S6, S6b, S6d —
+      is deployed, verified in production, and its gate closed. What remains is
+      `docs/16_operations/PHASE0-ACCESS-TRACKER.md`, and one item there is a **named M1 gate
+      condition**: **#13, provider-side spend limits on account `277-138-1970`, still not started.**
+      M1 reads "…Provider-side budget caps set. **Manual capped experiment runs here.**" — the word
+      is *capped*, and the cap is set in the ad account, not in this repository.
+
+      That ordering is the whole point rather than bureaucracy: growth-core records *why* money was
+      spent, it does not limit *how much*. Nothing in this platform can stop a runaway campaign, so
+      the provider-side cap is the only thing between a misconfigured experiment and an unbounded
+      bill. It has to exist before the first click, because it cannot be applied retroactively.
+
+      Also open on the tracker, none of them blocking: #2 (record the ad-platform decision under
+      `docs/07_decisions/`), #11 (privacy policy live), #12 (Czech consent baseline — counsel
+      review, which the consent-record gap below also waits on), #14 (durable edge-ingestion target
+      recorded; the buffer is built, the decision record is missing).
+
+      ⏰ **Worth chasing: #11f, Google Ads Basic access, applied 2026-07-19 against a quoted ~5
+      working days.** That window closed well before 2026-08-01 with no outcome recorded.
+
+- [ ] **Launching the real experiment means rolling the landing.** Owner decision 2026-07-23: the
+      real first experiment runs as `v2`, because `exp-001/v1` is now the S1a verification record.
+      `k8s/configmap-web.yaml` supplies `GROWTH_EXPERIMENT_ID`/`GROWTH_EXPERIMENT_VERSION` to
+      growth-web and currently says `exp-001`/`v1`. Until it is updated and the landing rolled,
+      every touchpoint keeps naming `v1` and the new experiment's report counts nothing — while
+      every health check stays green. Do this **before** paid traffic, not after the first click.
+
 - [x] **S6 deployed and verified in production, 2026-07-22.** Migration 006 applied (via the
       migrate init container, as the owner role); the leads Prisma migration applied (`prisma
       migrate status` → "Database schema is up to date", 7 migrations). All four S6 paths were
@@ -80,8 +107,10 @@ Backlog. Slice-level planning lives in `docs/08_roadmap/DELIVERY_PLAN.md`.
       container would have applied it to the production database), and `services/web/src` momentarily
       empty during a restructure, which would have built `growth-web` from nothing.
 
-      **Whoever deploys S6d closes this line too.** Confirm afterwards with the `grep` above
-      returning 1, not by reading this entry.
+      **Closed by the S6d rollout, and confirmed rather than assumed (2026-08-01):** the `grep`
+      above returns **1** against the running container, so the live image resolves the
+      supersession chain in SQL. The live report answers 200 in the S6d shape, which the
+      time-ordered query could not produce.
 
 - [ ] **Publishing the experiment screen on a public hostname — DECIDED by the owner 2026-07-23
       (C-006 §6.8).** The screen is on growth-core, which has **no ingress**, and the owner reaches
@@ -171,9 +200,19 @@ the spend form wrote a row and summed `1500.0000 + 250.5000` to exactly `1750.50
       gap below: unparseable messages are dropped with the body logged, failed writes requeue
       forever.
 
-- [ ] **S1a VERIFY — five of six steps run and passed by the owner, 2026-07-23. Only step 3
-      (the three-day read-back, ≈2026-07-26) remains.** This line stays open until then; the gate,
-      and with it M1, closes on step 3, not before.
+- [x] **S1a VERIFY — COMPLETE 2026-08-01. The gate closes, and with it M1.** Five steps ran
+      2026-07-23; step 3, the read-back, ran today — nine days after the decisions were written,
+      not the three the gate asks for, which makes it a stronger test rather than a weaker one.
+
+      Read back from the live pod: `exp-001/v1` holds exactly 3 artefacts, launch →
+      budget_change → stop, and the chain still explains *why* without the day's memory filling
+      the gaps. The budget change reads "решил продлить тест на бОльшее количество
+      пользователей" and the stop reads "нужно проверить все объявления до запуска" — both are
+      still legible reasons rather than labels. That is the whole feature; everything else is
+      plumbing.
+
+      The stray `\n  ` in the launch hypothesis is still there and still readable, which is the
+      append-only guarantee behaving as designed. The real experiment launches under `v2`.
 
       Run against `exp-001/v1` through the pod. Observed:
 

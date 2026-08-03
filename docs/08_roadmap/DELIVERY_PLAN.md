@@ -73,13 +73,13 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 
 | # | Slice | Required owners | Milestone | Status |
 |---|---|---|---|---|
-| **S1a** | **Decision record** — `DecisionArtefact` + canonical hash | growth-core (`services/core/`) | M1 | 🔨 **IMPL подтверждён владельцем как корректный (2026-07-21)**, развёрнут в проде. Остаётся только ручная проверка F-001 (`./scripts/s1a-verify.sh`) — гейт VERIFY не закрыт · [F-001](../10_features/F-001-decision-record-and-governance.md) · [C-001](../23_documentation_contracts/C-001-decision-record.md) · [D-004](../07_decisions/D-004-decision-artefact-shape-and-hash.md) |
-| **S1b** | Execution governance — `ApprovalGrant` + `approvedParametersHash`, `ExecutionAttempt` + `effectKey`, budget ceilings, fix in-memory idempotency, **аутентифицированная поверхность владельца** (вход через `auth-microservice`) | goalkeeper · growth-core · **auth** | **M3** — не нужен до первой записи в API | ◷ Блокирует **S9** и **S6c**. Вход в браузере в исходный объём среза не входил — добавлен 2026-07-23, см. «Найдено при планировании кабинета» |
-| **S5** | Landing runtime, durable edge→core ingestion, consent evidence, UTM + click-ID, `AnonymousTouchpoint`, `IdentityLink` | growth-web · growth-core · **auth** · bazos · leads | M1 | ✅ **Все воркеры в проде.** W1 (приём + консьюмер), W6, W3, W4, затем **W2** (лендинг на `bazos.alfares.cz/l`, cookie `gsid`, `AnonymousTouchpoint`) и **W5** (лиды, `growth.lead.created_from_registration.v1`). Цепочка проверена сквозь реальные сервисы 2026-07-22: клик на лендинге → consent → регистрация через auth → `IdentityLink` → `qualification.lead`. Ingress — **`bazos.alfares.cz/l`, а не `growth.alfares.cz`**: cookie `gsid` scoped `Domain=bazos.alfares.cz`, на другом хосте атрибуция пуста при зелёном health (D-005) · [EP-005](../21_execution_plans/EP-005-landing-and-ingestion.md) |
-| **S6** | Qualification — `LeadQualificationEvent`, `criteriaVersion: v1-owner-manual`, manual marking surface, `ManualSpendObservation` | leads · growth-core | M1 | ✅ **Развёрнуто и проверено в проде 2026-07-22.** Миграция 006 применена, миграция Prisma в leads применена. Проверено на реальных сервисах: лид доходит до `qualification.lead` из очереди `growth.lead-created` по всей цепочке от лендинга; вердикт из админ-панели `leads` доходит до `qualification.lead_qualification`; исправление **добавляет** строку, а `UPDATE`/`DELETE` под runtime-ролью отклоняются (`permission denied`); `POST /spend/observations` сохраняет наблюдение и публикует его в `growth.events` · [F-006](../10_features/F-006-qualification-and-spend.md) · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) |
-| **S6b** | Витрина эксперимента — read-API и экран владельца | growth-core | M1 | ✅ **Развёрнуто и проверено в проде 2026-07-22.** `GET /experiments/:id/report` и экран `GET /experiments/:id` с формой ввода расходов. Стоимость регистрации, стоимость квалифицированного лида, разбивка attributed/unattributed, производный `pending`. Деньги — десятичные строки (BigInt, scale 4), деление округляется half-up до 2 знаков, деление на ноль даёт `—`, а не 0/NaN. Только на growth-core, **без ingress**. **Исправлено 2026-07-23:** текущий вердикт лида берётся по цепочке `supersedes`, а не по «последний `decided_at`» — прежний порядок молча подставлял отменённый вердикт в `costPerQualifiedLead` при переупорядоченной доставке (C-006 §1.4, коммит `181529b`, **в проде ещё не раскатано**) · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) §6 |
-| **S6d** | **Измерение по эксперименту и по кампании** — `attribution.touchpoint` и его консьюмер, эксперимент лида выводится из тачпоинта, `campaignId` в схеме расходов v2 | growth-core · growth-web | M1 | 🔨 **Код готов, тесты зелёные (core 308, web 84), в прод не выкачено.** Миграция 007 применена только на тестовой БД. Решения владельца 2026-07-23: 1б и 2а сразу, а не дважды · [F-007](../10_features/F-007-per-experiment-and-per-campaign-measurement.md) · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) §2.5/§4.3/§6.6 |
-| **S6c** | **Личный кабинет владельца** — запись решений из GUI вместо `scripts/s1a-verify.sh`: гипотеза, бюджет, причина изменения бюджета, причина остановки, расходы, отчёт | growth-core · **auth** | **M3** — вместе с S1b | ⏸ **Заблокирован S1b** (решение владельца, 2026-07-23: ждём настоящий вход через `auth-microservice`, а не Basic-пароль). Объём и находки — §10 |
+| **S1a** | **Decision record** — `DecisionArtefact` + canonical hash | growth-core (`services/core/`) | M1 | ✅ **VERIFY gate closed 2026-08-01.** Five F-001 steps run by owner 2026-07-23 (launch 201, edit 409, stop-bare 422, budget 201, stop 201); step 3 — reading the chain after a delay — done 2026-08-01, nine days later instead of three: `exp-001/v1` holds exactly three artefacts, `launch → budget_change → stop` reads as one story and still explains **why** without relying on that day's memory. That is the whole feature · [F-001](../10_features/F-001-decision-record-and-governance.md) · [C-001](../23_documentation_contracts/C-001-decision-record.md) · [D-004](../07_decisions/D-004-decision-artefact-shape-and-hash.md) |
+| **S1b** | Execution governance — `ApprovalGrant` + `approvedParametersHash`, `ExecutionAttempt` + `effectKey`, budget ceilings, fix in-memory idempotency, **authenticated owner surface** (login via `auth-microservice`) | goalkeeper · growth-core · **auth** | **M3** — not needed until the first API write | ◷ Blocks **S9** and **S6c**. Browser login was not in the original slice scope — added 2026-07-23, see "Found while planning the cabinet" |
+| **S5** | Landing runtime, durable edge→core ingestion, consent evidence, UTM + click-ID, `AnonymousTouchpoint`, `IdentityLink` | growth-web · growth-core · **auth** · bazos · leads | M1 | ✅ **All workers in prod.** W1 (ingest + consumer), W6, W3, W4, then **W2** (landing on `bazos.alfares.cz/l`, cookie `gsid`, `AnonymousTouchpoint`) and **W5** (leads, `growth.lead.created_from_registration.v1`). Chain verified through real services 2026-07-22: landing click → consent → registration via auth → `IdentityLink` → `qualification.lead`. Ingress is **`bazos.alfares.cz/l`, not `growth.alfares.cz`**: cookie `gsid` scoped `Domain=bazos.alfares.cz`; on another host attribution is empty while health is green (D-005) · [EP-005](../21_execution_plans/EP-005-landing-and-ingestion.md) |
+| **S6** | Qualification — `LeadQualificationEvent`, `criteriaVersion: v1-owner-manual`, manual marking surface, `ManualSpendObservation` | leads · growth-core | M1 | ✅ **Deployed and verified in prod 2026-07-22.** Migration 006 applied, Prisma transaction in leads applied. Verified on real services: lead reaches `qualification.lead` from queue `growth.lead-created` along the full chain from the landing; verdict from the `leads` admin panel reaches `qualification.lead_qualification`; the fix **adds** a row, and `UPDATE`/`DELETE` under the runtime role are rejected (`permission denied`); `POST /spend/observations` stores the observation and publishes it to `growth.events` · [F-006](../10_features/F-006-qualification-and-spend.md) · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) |
+| **S6b** | Experiment showcase — read-API and owner screen | growth-core | M1 | ✅ **Deployed and verified in prod 2026-07-22.** `GET /experiments/:id/report` and screen `GET /experiments/:id` with spend-entry form. Cost per registration, cost per qualified lead, attributed/unattributed breakdown, derived `pending`. Money as decimal strings (BigInt, scale 4); division rounds half-up to 2 places; division by zero yields `—`, not 0/NaN. growth-core only, **no ingress**. **Fixed 2026-07-23:** current lead verdict is taken via the `supersedes` chain, not by "latest `decided_at`" — the old order silently substituted a cancelled verdict into `costPerQualifiedLead` under reordered delivery (C-006 §1.4, commit `181529b`, **rolled out with S6d 2026-07-23**; verified on the running container 2026-08-01: `grep -c 'WITH RECURSIVE' dist/qualification/qualification.repository.js` → 1) · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) §6 |
+| **S6d** | **Per-experiment and per-campaign measurement** — `attribution.touchpoint` and its consumer, lead experiment derived from the touchpoint, `campaignId` in spend schema v2 | growth-core · growth-web | M1 | ✅ **Deployed and verified in prod 2026-07-23** (tag `350a2ba`). Migration 007 applied by the migrate container; queue `growth.touchpoints` bound to `growth.events`, 1 consumer, 0 messages; `GET /experiments/exp-001/report` returns the new shape — and that shape is unreachable without the join on `attribution.touchpoint` and the `campaign_id` column, so the response proves both DDL changes. Same rollout carried the C-006 §1.4 fix. First honest numbers: `registrations: 0`, `outOfScope.noTouchpoint: 4` — yesterday those four leads were counted as experiment registrations. Owner decisions 2026-07-23: 1b and 2a immediately, not twice · [F-007](../10_features/F-007-per-experiment-and-per-campaign-measurement.md) · [C-006](../23_documentation_contracts/C-006-qualification-and-spend.md) §2.5/§4.3/§6.6 |
+| **S6c** | **Owner cabinet** — record decisions from the GUI instead of `scripts/s1a-verify.sh`: hypothesis, budget, budget-change reason, stop reason, spend, report | growth-core · **auth** | **M3** — together with S1b | ⏸ **Blocked by S1b** (owner decision, 2026-07-23: wait for real login via `auth-microservice`, not a Basic password). Scope and findings — §10 |
 | **S7** | **Universal revenue adapter** — canonical `revenue.recognised`, flipflop as first client (§6) | orders · payments · growth-core · flipflop | M2 | ◷ |
 | **S8** | Google Ads connector — read-only metrics, `SpendObservation` + reconciliation | growth-core | M2 | ◷ |
 | **S9** | Google Ads connector — approved writes, execution reconciliation, connector failure states | growth-core · goalkeeper | M3 | ◷ |
@@ -94,53 +94,51 @@ Status legend: `✅` done · `🔨` active · `◷` planned · `⏸` blocked
 | **BACKLOG** ||||
 | **B1** | BPCP consolidation (D3) | bpcp · goalkeeper · catalog | — | ◷ |
 
-### Найдено при подготовке EP-005 — влияет на другие срезы
+### Found while preparing EP-005 — affects other slices
 
-~~**`auth-microservice` не эмитит никаких событий.**~~ **Закрыто 2026-07-21 (W3).** `auth` эмитит
-`auth.user.registered.v1` в `auth.events`. Событие намеренно generic и переиспользуемое: S6
-(квалификация), S10 (загрузка конверсий) и MS-P подключаются к нему без изменений в auth. Ни
-`gsid`, ни `experimentId`, ни `workspaceId` в него добавлять нельзя — это проверяется тестами с
-обеих сторон.
+~~**`auth-microservice` emits no events.**~~ **Closed 2026-07-21 (W3).** `auth` emits
+`auth.user.registered.v1` on `auth.events`. The event is intentionally generic and reusable: S6
+(qualification), S10 (conversion upload), and MS-P subscribe to it with no changes in auth. Neither
+`gsid`, nor `experimentId`, nor `workspaceId` may be added to it — enforced by tests on both sides.
 
-**Осталось от этой находки:** в auth нет outbox — неудачная публикация теряется (пишется в лог
-целиком для ручного повтора). У сервиса нет механизма миграций, поэтому таблицу outbox сначала
-некуда положить. Подробности в `auth-microservice/TASKS.md`.
+**Still open from this finding:** auth has no outbox — a failed publish is lost (logged in full for
+manual replay). The service has no migration mechanism, so there is nowhere to put an outbox table
+yet. Details in `auth-microservice/TASKS.md`.
 
-**Что «регистрация» значит.** Пользователь создаётся в пяти местах, и три из них ничего не
-доказывают: `register-contact` — это форма захвата контакта (`authenticated: false`), а
-`requestMagicLink` создаёт запись по любому введённому адресу. Событие эмитится только по
-подтверждённой личности, поэтому измеренные регистрации будут **ниже** числа строк в `users` —
-в отчёте MS-002 указывать обе величины.
+**What "registration" means.** A user is created in five places, and three of them prove nothing:
+`register-contact` is a contact-capture form (`authenticated: false`), and `requestMagicLink`
+creates a row for any address entered. The event is emitted only on confirmed identity, so measured
+registrations will be **lower** than the row count in `users` — report both figures in MS-002.
 
-### Найдено при реализации S6 — влияет на другие срезы
+### Found while implementing S6 — affects other slices
 
-**Документ описывал эндпоинт, которого нет.** F-006 утверждал, что в `leads.controller.ts` есть
-`PATCH /leads/:id → status` и что S6 сводится к тому, чтобы существующая смена статуса начала
-эмитить событие. Такого маршрута нет, и `Lead.status` пишется ровно в двух местах внутри сервиса —
-оператором никогда. Реализованный буквально, срез повесил бы корректное, покрытое тестами событие
-на переход, который нечем вызвать, и оно не эмитилось бы никогда, при этом выглядя рабочим.
-Исправлено в источнике; исходная формулировка процитирована, а не удалена.
+**The document described an endpoint that does not exist.** F-006 claimed that `leads.controller.ts`
+has `PATCH /leads/:id → status` and that S6 reduces to making the existing status change emit an
+event. That route does not exist, and `Lead.status` is written in exactly two places inside the
+service — never by an operator. Implemented literally, the slice would have hung a correct,
+test-covered event on a transition nothing can invoke, so it would never emit while looking done.
+Fixed at the source; the original wording is quoted, not deleted.
 
-**Схема контракта принимала пустой `evidenceReference`.** У поля не было `minLength`, то есть
-`""` проходил валидацию — а это вся провенанс-цепочка вручную введённой суммы расходов. Правило
-репозитория: пустой свободный текст отклоняется, а не подставляется по умолчанию. Исправлено
-(`minLength: 1` также на `observationId`, `experimentId`, `enteredBy`).
+**The contract schema accepted an empty `evidenceReference`.** The field had no `minLength`, so
+`""` passed validation — and that is the entire provenance chain for a manually entered spend
+amount. Repo rule: empty free text is rejected, not defaulted. Fixed (`minLength: 1` also on
+`observationId`, `experimentId`, `enteredBy`).
 
-**Оба дефекта происходили из документов, а не из кода** — та же закономерность, что и в D-005.
-Тест, написанный против контракта до внимательного чтения схемы, поймал второй из них.
+**Both defects came from documents, not code** — the same pattern as D-005. A test written against
+the contract before carefully reading the schema caught the second one.
 
-**Витрина эксперимента построена в S6b (2026-07-22).** Заявленный результат F-006 §3 достигнут:
-read-API `GET /experiments/:id/report` и серверный экран `GET /experiments/:id` показывают обе
-метрики стоимости и разбивку attributed/unattributed.
+**Experiment showcase built in S6b (2026-07-22).** The claimed F-006 §3 outcome is met: read-API
+`GET /experiments/:id/report` and server screen `GET /experiments/:id` show both cost metrics and
+the attributed/unattributed breakdown.
 
-Два ограничения зафиксированы, а не скрыты:
+Two constraints are recorded, not hidden:
 
-- **Экран живёт только на growth-core, у которого нет ingress.** Владелец открывает его через
-  `kubectl -n statex-apps port-forward deploy/growth-core 3376:3376`. На `growth-web` его класть
-  нельзя: тот публичен на `bazos.alfares.cz/l` и не имеет никакой аутентификации. Публикация на
-  публичном хосте требует аутентифицированной поверхности (S1b) — **решение владельца**, C-006 §6.8.
-- **Отчёт считает лиды по workspace, а не по эксперименту**: у `qualification.lead` нет
-  `experiment_id`. Верно, пока на workspace идёт один эксперимент; неверно со второго — C-006 §6.6.
+- **The screen lives only on growth-core, which has no ingress.** The owner opens it via
+  `kubectl -n statex-apps port-forward deploy/growth-core 3376:3376`. It must not go on
+  `growth-web`: that is public on `bazos.alfares.cz/l` and has no authentication. Publishing on a
+  public host requires an authenticated surface (S1b) — **owner decision**, C-006 §6.8.
+- **The report counts leads by workspace, not by experiment**: `qualification.lead` has no
+  `experiment_id`. Correct while the workspace runs one experiment; wrong from the second — C-006 §6.6.
 
 ### Why S2–S4 are a parallel track, not a gate
 
@@ -189,7 +187,7 @@ Parallel work runs freely **between** milestones. At each milestone all active w
 | Lead → order attribution | — | 🔨 S7 | — | 🔨 S7 | — | — | ✅ **exists** | — | 🔨 S7 |
 | `revenue.recognised` | — | — | — | 🔨 S7 | — | — | 🔨 S7 | 🔨 S7 | 🔨 S7 |
 | Money reversal events | — | — | — | 🔨 S7 | — | — | 🔨 S7 | 🔨 S7 | — |
-| Owner cabinet (GUI записи решений) | — | — | — | ◷ S6c | — | — | — | — | — |
+| Owner cabinet (GUI decision recording) | — | — | — | ◷ S6c | — | — | — | — | — |
 | Per-experiment / per-campaign measurement | — | — | — | 🔨 S6d | 🔨 S6d | — | — | — | — |
 | Ad connector | — | — | — | 🔨 S8/S9 | — | — | — | — | — |
 | Conversion upload | — | 🔨 S10 | — | 🔨 S10 | — | — | — | — | — |
@@ -306,67 +304,66 @@ Mirrors the standard's required execution-plan fields.
 
 ---
 
-## 10. S6c — личный кабинет владельца (решение владельца 2026-07-23)
+## 10. S6c — owner cabinet (owner decision 2026-07-23)
 
-**Требование владельца, дословно:** «мне удобнее этим управлять из GUI, а не командной строки».
-Это не удобство поверх работающего процесса — это условие того, что решения вообще будут
-записываться. Запись решения, которая требует собрать JSON в bash, конкурирует с двумя минутами в
-Google Ads UI и проигрывает; тогда `decision_artefact` пустеет, а платформа перестаёт знать, почему
-были потрачены деньги. Ровно этот довод уже зафиксирован в
-[F-001](../10_features/F-001-decision-record-and-governance.md) как причина, по которой изменение
-бюджета сделано отдельным типом артефакта, а не «остановить и перезапустить».
+**Owner requirement, verbatim:** "it's more convenient for me to manage this from a GUI, not the command line."
+This is not convenience on top of a working process — it is the condition under which decisions get
+recorded at all. A decision write that requires assembling JSON in bash competes with two minutes in
+the Google Ads UI and loses; then `decision_artefact` goes empty and the platform no longer knows why
+money was spent. Exactly this argument is already recorded in
+[F-001](../10_features/F-001-decision-record-and-governance.md) as the reason budget change is a
+separate artefact type rather than "stop and relaunch".
 
-### Первый функционал (объём среза)
+### First functionality (slice scope)
 
-| Экран / действие | Что пишет | Чем уже обеспечено |
+| Screen / action | What it writes | Already provided by |
 |---|---|---|
-| Список экспериментов | ничего | `DecisionRepository` — нужен новый read-метод «различные experimentId» |
-| Запуск эксперимента — гипотеза, обоснование, бюджет, даты | `experiment.launch` | `DecisionService.record` |
-| Изменение бюджета — причина + новый потолок | `experiment.budget_change` | то же; `supersedesArtefactId` и `previousBudgetCap` подставляет сервер, а не человек |
-| Остановка — причина | `experiment.stop` | то же |
-| Ввод расходов | `manual_observation` | `SpendService.record` (S6) |
-| Отчёт: расход, стоимость регистрации, стоимость квалифицированного лида, attributed/unattributed, pending | ничего | `ExperimentReportService` (S6b) |
-| История решений одного эксперимента — «почему» подряд | ничего | `GET /governance/decisions` (S1a) |
+| Experiment list | nothing | `DecisionRepository` — needs a new read method "distinct experimentId" |
+| Launch experiment — hypothesis, rationale, budget, dates | `experiment.launch` | `DecisionService.record` |
+| Budget change — reason + new ceiling | `experiment.budget_change` | same; `supersedesArtefactId` and `previousBudgetCap` filled by the server, not the human |
+| Stop — reason | `experiment.stop` | same |
+| Enter spend | `manual_observation` | `SpendService.record` (S6) |
+| Report: spend, cost per registration, cost per qualified lead, attributed/unattributed, pending | nothing | `ExperimentReportService` (S6b) |
+| Decision history for one experiment — "why" in sequence | nothing | `GET /governance/decisions` (S1a) |
 
-Ни одной новой таблицы и ни одной миграции: весь срез — экраны поверх сервисов, которые уже
-написаны, задеплоены и покрыты тестами. Дорогая часть здесь не код, а DOC и CONTRACT
-(`F-007`, `C-007`), которые пишутся первыми по гейтам §2.
+No new tables and no migrations: the whole slice is screens on top of services that are already
+written, deployed, and test-covered. The expensive part here is not code but DOC and CONTRACT
+(`F-007`, `C-007`), written first per the §2 gates.
 
-**Два требования к экранам, которые нельзя потерять при реализации:**
+**Two screen requirements that must not be lost in implementation:**
 
-1. **Отказы должны читаться, а не выпадать JSON-страницей исключения.** Пустая причина остановки
-   (422) и попытка переписать существующий артефакт (409) — это поведение, которое срез обязан
-   показывать владельцу словами. Без этого ручную проверку F-001 нельзя выполнить через кабинет.
-2. **Предпросмотр артефакта перед записью.** `decision_artefact` append-only: опечатка в гипотезе
-   остаётся навсегда, исправляется только новым артефактом. У CLI эту роль выполняет `DRY_RUN=1`;
-   в GUI её должен выполнять шаг подтверждения.
+1. **Rejections must be readable, not dumped as a JSON exception page.** An empty stop reason
+   (422) and an attempt to overwrite an existing artefact (409) are behaviours the slice must show
+   the owner in words. Without that, F-001 manual verification cannot be done through the cabinet.
+2. **Artefact preview before write.** `decision_artefact` is append-only: a typo in the hypothesis
+   stays forever, fixed only by a new artefact. CLI uses `DRY_RUN=1` for this; GUI must use a
+   confirmation step.
 
-### Найдено при планировании кабинета (2026-07-23)
+### Found while planning the cabinet (2026-07-23)
 
-**В плане не было интерфейса для записи решений — вообще.** Единственный экран, который план
-предусматривал, это витрина S6b: отчёт и форма расходов. Запуск, изменение бюджета и остановка
-существовали только как API и `scripts/s1a-verify.sh`. Владелец спросил, стоит ли кабинет в очереди
-на реализацию; честный ответ был «нет, ждать нечего», и срез заведён именно поэтому.
-[ARCHITECTURE](../06_architecture/ARCHITECTURE.md) откладывала это осознанно — «version-management
-UI **may wait**» при обязательном неизменяемом снимке запуска — то есть отложен был интерфейс, а не
-запись; кабинет эту отсрочку закрывает и снимка не трогает.
+**The plan had no interface for recording decisions — at all.** The only screen the plan provided
+was the S6b showcase: report and spend form. Launch, budget change, and stop existed only as API
+and `scripts/s1a-verify.sh`. The owner asked whether the cabinet was queued for implementation; the
+honest answer was "no, nothing to wait for," and the slice was opened for that reason.
+[ARCHITECTURE](../06_architecture/ARCHITECTURE.md) deferred this deliberately — "version-management
+UI **may wait**" while the immutable launch snapshot is mandatory — i.e. the interface was deferred,
+not the write; the cabinet closes that deferral and does not touch the snapshot.
 
-**S1b не содержал входа в браузере, хотя весь репозиторий ссылается на него как на
-«аутентифицированную поверхность».** Объём S1b по F-001 — это `ApprovalGrant`,
-`approvedParametersHash`, `ExecutionAttempt`/`effectKey`, потолки бюджета и сверка: механика
-авторизации **вызовов API**. Гранты авторизуют исполнение, они не логинят человека. Если бы срез
-кабинета просто «ждал S1b», он ждал бы того, чего в S1b не написано. Поэтому вход владельца
-(`POST /auth/login` → сессионная cookie → проверка через `POST /auth/validate` в
-`auth-microservice`, который уже это умеет) добавлен в объём S1b явной строкой, а S6c от него
-зависит.
+**S1b did not include browser login, even though the whole repo refers to it as the
+"authenticated surface".** S1b scope per F-001 is `ApprovalGrant`, `approvedParametersHash`,
+`ExecutionAttempt`/`effectKey`, budget ceilings, and reconciliation: the machinery that authorises
+**API calls**. Grants authorise execution; they do not log a human in. If the cabinet slice simply
+"waited for S1b", it would wait for something S1b never wrote. So owner login
+(`POST /auth/login` → session cookie → check via `POST /auth/validate` in `auth-microservice`,
+which already supports this) was added to S1b scope as an explicit line, and S6c depends on it.
 
-**Цена решения владельца названа прямо:** S1b стоит на **M3**, значит кабинет появляется на M3, а
-до тех пор решения пишутся через `scripts/s1a-verify.sh`. Альтернативы — публикация за
-Basic-паролем из Vault или кабинет на `port-forward` без ingress — владельцем **отклонены**
-2026-07-23 в пользу настоящего входа. Если ожидание окажется дороже, чем кажется, ускорять надо не
-кабинет, а вход в S1b: остальной объём среза от него не зависит.
+**The cost of the owner decision is stated plainly:** S1b sits on **M3**, so the cabinet appears at
+M3, and until then decisions are written via `scripts/s1a-verify.sh`. Alternatives — publish behind a
+Basic password from Vault, or a cabinet on `port-forward` with no ingress — were **rejected** by the
+owner on 2026-07-23 in favour of real login. If waiting turns out more expensive than it looks,
+accelerate login in S1b, not the cabinet: the rest of the slice scope does not depend on it.
 
-**Кабинет не управляет Google Ads и не притворяется, что управляет.** Коннектора нет: чтение метрик
-— S8, записи — S9, оба ◷. Бюджет по-прежнему поднимается руками в Google Ads UI, а кабинет
-записывает, почему владелец это сделал. Экран, на котором «поднять бюджет» выглядит как действие
-над кампанией, был бы ложью интерфейса — формулировки в S6c обязаны говорить «записать решение».
+**The cabinet does not manage Google Ads and does not pretend to.** There is no connector: metrics
+read is S8, writes are S9, both ◷. Budget is still raised by hand in the Google Ads UI; the cabinet
+records why the owner did it. A screen where "raise budget" looks like an action on the campaign
+would be an interface lie — S6c copy must say "record decision".
