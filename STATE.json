@@ -1,116 +1,18 @@
 {
-  "stage": "M1 slices all deployed and verified in production (S1a, S5, S6, S6b, S6d). S1a VERIFY gate CLOSED 2026-08-01 with the delayed read-back. M1 itself now waits on owner-side Phase 0 items, not on code.",
-  "health": "ok",
-  "deployed": "S5 yes. S6 yes — deployed 2026-07-22, migration 006 applied in production, and all four write/consume paths exercised against real services. S6b (read API + owner screen) deployed 2026-07-22.",
-  "slice": "none in flight — next code slice is S1b (M3). M1 completion is owner-side.",
-  "gate": "S1a VERIFY CLOSED 2026-08-01: five steps passed 2026-07-23, step 3 (read the chain back after time) done 2026-08-01 — nine days rather than three, so a stronger test. exp-001/v1 holds exactly 3 artefacts and reads back launch -> budget_change -> stop as one story that still explains why. S5, S6, S6b, S6d all DOC+CONTRACT+IMPL+VERIFY complete and in production.",
-  "layout": "one repository, several containers: services/core -> growth-core:3376 (ClusterIP only); services/web -> growth-web:3377 (bazos.alfares.cz/l)",
-  "containers": {
-    "growth-core": {
-      "source": "services/core",
-      "port": 3376,
-      "deployed": true,
-      "ingress": false
-    },
-    "growth-web": {
-      "source": "services/web",
-      "port": 3377,
-      "deployed": true,
-      "ingress": "bazos.alfares.cz/l — a separate Ingress object for that host, NOT growth.alfares.cz. The gsid cookie is scoped Domain=bazos.alfares.cz so bazos-service can read it; another host leaves attribution permanently empty while reporting healthy (D-005)."
-    }
+  "schemaVersion": 1,
+  "project": "growth",
+  "lifecycle": "implementation",
+  "health": "active",
+  "activeTask": "bootstrap-service",
+  "lastUpdated": "2026-08-30T22:50:25Z",
+  "deployment": {
+    "status": "not-deployed",
+    "lastUpdated": "2026-08-30T22:50:25Z"
   },
-  "database": {
-    "name": "growth_core",
-    "owner_role": "growth_core_owner",
-    "runtime_role": "growth_core",
-    "note": "Roles split 2026-07-20. The runtime role holds DML grants only and owns nothing. Migrations 001-006 applied in production (006 confirmed applied via the migrate init container 2026-07-22).",
-    "schemas": {
-      "qualification": "S6, migration 006, APPLIED IN PRODUCTION. lead (anchor, from growth.lead-created) + lead_qualification (append-only). Append-only VERIFIED in production 2026-07-22: the runtime role holds only SELECT,INSERT and a direct UPDATE and DELETE were both refused with 'permission denied for table lead_qualification'. lead_qualification has NO foreign key to lead on purpose.",
-      "spend": "S6, migration 006, APPLIED IN PRODUCTION. manual_observation, owner-typed ad spend. amount_value NUMERIC(20,4), rendered as a decimal string everywhere. superseded_by_observation_id exists for S8 and is unused."
-    }
-  },
-  "leads_database": {
-    "note": "LeadQualification table added by prisma/migrations/20260722_add_lead_qualification and APPLIED in production (prisma migrate status: 'Database schema is up to date', 7 migrations, 2026-07-22)."
-  },
-  "broker": {
-    "exchanges": {
-      "growth.events": "topic, durable, routing key = event type. Produced by growth-core ingest drain, carrying growth.auth_redirect.initiated.v1 from bazos-service. Consumed by growth-core into queue growth.auth-redirects, which the consumer declares and binds itself on boot.",
-      "auth.events": "topic, durable. Produced by auth-microservice (W3). Consumed by growth-core into queue growth.auth-registrations.",
-      "leads.events": "topic, durable. Produced by leads-microservice. Carries growth.lead.created_from_registration.v1 (S5 W5) and, once S6 ships, growth.lead.qualification_recorded.v1. growth-core consumes both into growth.lead-created and growth.lead-qualification, which QualificationConsumer declares AND binds itself on boot."
-    },
-    "unconsumed_backlog_warning": "RESOLVED. growth.lead-created, growth.lead-qualification, growth.auth-redirects and growth.auth-registrations all had 1 consumer and 0 messages on 2026-07-22 after the S6 deploy. No backlog was stranded.",
-    "note": "A topic exchange discards a message with no matching binding, so the consumer declares AND binds both queues on boot rather than relying on them existing. No dead-letter queue yet: unparseable messages are dropped with their body logged, failed joins are requeued indefinitely."
-  },
-  "s6": {
-    "built": "LeadQualificationEvent (growth.lead.qualification_recorded.v1, contract C-006), the manual marking surface (two buttons in the leads admin panel that already existed, POST /api/admin/leads/:id/qualification behind AdminAuthGuard), ManualSpendObservation intake (POST /spend/observations on growth-core), and growth-core consuming both growth.lead-created and growth.lead-qualification.",
-    "notBuilt": "Nothing from F-006 §3 remains unbuilt — the experiment view shipped as S6b. See s6b below.",
-    "contractDefectsFixed": "F-006 claimed a PATCH /leads/:id status endpoint that does not exist — qualification is a new surface, not a decoration on an existing one. spend.observed_manual.v1.json accepted a blank evidenceReference (no minLength), which would have allowed a hand-typed spend figure with no provenance.",
-    "pendingIsDerived": "pending is never stored and is not a valid status anywhere — it is the absence of a judgement. Pending leads stay in the numerator of cost-per-qualified, and a derived pending cannot drift from that rule.",
-    "verifiedInProduction": {
-      "date": "2026-07-22",
-      "leadReachedQualificationLead": "PROVEN end to end from the real landing: bazos.alfares.cz/l/v1-cena -> consent (gsid cookie, Domain=bazos.alfares.cz) -> /l/intent -> /ui/auth-redirect -> auth register with state -> attribution.auth_redirect + registration + identity_link joined on correlationId -> qualification.lead. leadId d5efeb20-a5da-44ba-ad08-acdacaa25c08.",
-      "judgementFromAdminPanel": "PROVEN. POST https://leads.alfares.cz/api/admin/leads/<id>/qualification -> 201 -> qualification.lead_qualification. decided_by_id is the real auth user id (e2a6fdd4-...), NOT the string 'owner', as C-006 §1.3 requires.",
-      "correctionAppends": "PROVEN. A second POST with supersedesQualificationId produced a SECOND row; the original was untouched. Then falsified: UPDATE and DELETE as the runtime role were both refused, permission denied.",
-      "spendObservation": "PROVEN. POST /spend/observations -> 201, row stored with amount_value 1500.0000 exactly, is_manual true, and the ingest buffer row reached status 'published' (confirm-channel, so the broker durably has it)."
-    },
-    "ownerDecisionResolved": "Spend campaign dimension: DECIDED 2026-07-23 and built in S6d as growth.spend.observed_manual.v2 with an optional campaignId (C-006 2.5). Was: 'Spend has no campaign dimension...'"
-  },
-  "notes": "growth-core 280 tests (243 before S6b, 276 after, +4 for the supersession chain; 24 suites, no baseline test lost), leads-microservice 174, growth-web 33. Landing copy read and APPROVED by a native Czech speaker 2026-07-23, before any paid traffic. Verified in production 2026-07-22: the full S6 chain and the S6b report. TEST DATA REMOVED 2026-07-22 on owner instruction — growth_core is empty (every table 0 rows), and the leads/auth artefacts of the verification run are gone. exp-001 no longer carries the 1750.5000 CZK it never spent. Deleting governance.decision_artefact required disabling its immutability trigger inside the deleting transaction; the trigger was re-enabled and then re-proven to refuse a DELETE. The 610 accounts matching %@example.invalid predate S6, belong to other smoke tests, and were deliberately NOT touched. See TASKS.md.",
-  "s6c": {
-    "status": "PLANNED, blocked by S1b. No code exists. Added to the delivery plan 2026-07-23 on owner decision.",
-    "what": "The owner's cabinet — decisions recorded from a browser instead of scripts/s1a-verify.sh: hypothesis, budget, reason for a budget change, reason for a stop, spend entry, report, and the decision history of one experiment read back as a story.",
-    "why": "Owner requirement: a decision record that costs a hand-assembled JSON in bash loses to two minutes in the Google Ads UI, and then decision_artefact is empty and nothing knows why the money was spent.",
-    "blockedBy": "S1b, whose scope was extended on 2026-07-23 to include the owner's browser login (POST /auth/login -> session cookie -> POST /auth/validate against auth-microservice). Grants authorise API calls; they do not log a human in, so without that addition S6c would have been waiting for something S1b never produced.",
-    "milestone": "M3, because S1b is M3. Until then decisions are written with scripts/s1a-verify.sh.",
-    "buildsOn": "No new table and no migration. DecisionService (S1a), SpendService (S6) and ExperimentReportService (S6b) already carry every write and every number.",
-    "notInScope": "Google Ads itself. No connector exists (S8 read, S9 write, both planned), so the cabinet records decisions and never changes a live campaign.",
-    "scope": "docs/08_roadmap/DELIVERY_PLAN.md §10"
-  },
-  "attribution": {
-    "schema": "attribution",
-    "tables": "auth_redirect, registration, identity_link",
-    "joinKey": "payload.correlationId - never the envelope's, which auth mints for every registration including direct signups",
-    "gsid": "verified with a constant-time HMAC check; only the proven sessionId is stored, never the token. Forged tokens cost the attribution, not the conversion.",
-    "notImplemented": "gsid_orphan - W2 now produces touchpoints, so this is implementable; see TASKS.md"
-  },
-  "s6b": {
-    "built": "The experiment report. GET /experiments/:id/report (JSON read API) and GET /experiments/:id (server-rendered owner screen with a spend entry form posting to POST /experiments/:id/spend). Derives cost per registration, cost per qualified lead, the attributed/unattributed split and a derived pending. Owns no table and adds no migration.",
-    "money": "Summed as BigInt scaled 10^4 parsed from the NUMERIC(20,4) text — never through Number/parseFloat. Cost metrics round half-up to 2dp once, at the end, and are returned as strings.",
-    "divisionSafety": "Zero registrations or zero qualified -> null in the API, '—' on screen. Never 0, never NaN, never Infinity. Verified in production: the live report returned costPerQualifiedLead null with 0 qualified.",
-    "mixedCurrency": "More than one currency in an experiment's observations -> no total and no cost metrics, with the reason stated on screen. Summing CZK and EUR would be wrong and look fine.",
-    "exposure": "growth-core ONLY, which has no ingress. NOT on growth-web: growth-web is public on bazos.alfares.cz/l with no authentication, so an owner-only screen cannot live there. Owner reaches it via kubectl port-forward deploy/growth-core 3376:3376.",
-    "ownerDecisionTaken": "2026-07-23: the screen is published only behind a real login through auth-microservice, as part of S6c, gated on S1b. HTTP Basic behind an ingress was offered and refused. Until then growth-core has no ingress and port-forward is the access control. C-006 §6.8.",
-    "scopeGap": "CLOSED by S6d, 2026-07-23. The report no longer counts every workspace lead against the named experiment: a lead's experiment is derived from its touchpoint, and leads it must not count are reported as outOfScope rather than dropped. C-006 6.6.",
-    "readModelFix": "2026-07-23, commit 181529b, NOT YET DEPLOYED. currentVerdicts() ranked a lead's judgements by decided_at and never read supersedes_qualification_id, so a redelivered or late correction, a decided_at tie, or a first judgement re-emitted after a correction chain all surfaced a superseded verdict as current and fed costPerQualifiedLead silently. Current is now the judgement nothing supersedes, ranked by chain length then decided_at/received_at/qualification_id so the order is total, with the recursive walk depth-capped at 64 because producer-supplied ids make a cycle reachable. Definition written into C-006 §1.4 so contract and code agree. Three db-specs were written first and observed failing against the old query; a fourth witnesses the depth cap."
-  },
-  "s6d": {
-    "status": "DEPLOYED AND VERIFIED IN PRODUCTION 2026-07-23. Migration 007 applied via the migrate init container ('applied 007_touchpoint_and_campaign.sql, 1 migration(s) applied'). Tag 350a2ba.",
-    "what": "Per-experiment and per-campaign measurement (F-007). attribution.touchpoint + the growth.touchpoints consumer; a lead's experiment derived at read time from lead.correlation_id -> auth_redirect.session_id -> touchpoint; spend event v2 with an optional campaignId; report gains spend.byCampaign and outOfScope {otherExperiments, noTouchpoint}; growth-web refuses to start without GROWTH_EXPERIMENT_ID/VERSION instead of defaulting to the literal 'unknown'.",
-    "ownerDecisions2026_07_23": "Both gaps closed now rather than twice. Spend already recorded cannot be split afterwards, and the touchpoints carrying experimentId were being swept after 30 days by the ingest buffer retention.",
-    "derivedNotStored": "experiment_id is NOT a column on qualification.lead. The touchpoint, the click and the lead arrive on three queues at three rates, so a value resolved at write time could never be recomputed. The read model resolves the view that led to the click (at or before initiated_at; nearest later view only when nothing precedes it, which is clock skew rather than a later visit).",
-    "tests": "growth-core 308 (was 276), 24 suites; growth-web 84. Both typecheck clean. New: touchpoint storage + idempotency + runtime-role UPDATE/DELETE refusal, six lead-to-experiment derivation cases, campaign split/ordering/mixed-currency cases, v2 schema cases, landing fail-loud cases.",
-    "notDeployed": "growth-core rollout (also carries the C-006 1.4 supersession fix), migration 007 via the migrate init container, growth-web rollout. See TASKS.md.",
-    "verifiedInProduction": {
-      "date": "2026-07-23",
-      "migration": "007 applied by the init container as the owner role. Both DDL changes are proven by the live endpoint rather than by the log alone: GET /experiments/exp-001/report returned 200, and that response requires the LATERAL join over attribution.touchpoint AND the campaign_id column in spend.manual_observation to exist and be readable by the runtime role.",
-      "queue": "growth.touchpoints exists, bound to growth.events on growth.touchpoint.observed.v1, 1 consumer, 0 messages. Declared and bound by the consumer on boot, before any producer traffic depended on it.",
-      "reportShape": "Live response now carries spend.byCampaign and outOfScope. On production data it reads registrations 0 and outOfScope.noTouchpoint 4 — the four leads in the workspace have no stored touchpoint, so they are no longer counted against exp-001's spend. Before S6d the same four were reported as this experiment's registrations.",
-      "landing": "growth-web rolled out and serving (https://bazos.alfares.cz/l/v1-cena → 200). It now refuses to construct without GROWTH_EXPERIMENT_ID/VERSION; the ConfigMap supplies exp-001/v1, so the pod started clean.",
-      "alsoShipped": "The C-006 §1.4 supersession read-model fix, which had been written and tested but never rolled out."
-    },
-    "knownConsequence": "The four pre-existing leads can never be attributed to an experiment: no touchpoint was ever stored for them and the ingest buffer's 30-day retention has nothing to recover. They stay in outOfScope.noTouchpoint permanently, which is the truthful answer (F-007 'Explicitly excluded')."
-  },
-  "m1_remaining": {
-    "code": "none — every M1 slice is deployed and verified.",
-    "ownerSide": "Phase 0 tracker items, docs/16_operations/PHASE0-ACCESS-TRACKER.md. Item 13 (provider-side spend limits on account 277-138-1970) is a NAMED M1 gate condition and is still not started. Also open: item 2 (ad platform decision recorded in docs/07_decisions/), item 11 (privacy policy live), item 12 (Czech consent baseline / counsel review), item 14 (durable edge-ingestion target recorded).",
-    "watch": "Item 11f — Google Ads Basic access applied for 2026-07-19, quoted ~5 working days. That window closed well before 2026-08-01; worth chasing.",
-    "why": "M1's gate reads 'S1 + S5 + S6 verified. Touchpoint->lead traceable end-to-end. Provider-side budget caps set. Manual capped experiment runs here.' The first two clauses are now satisfied; the third is item 13 and is the thing standing between here and spending real money."
-  },
-  "verified_2026_08_01": {
-    "pods": "growth-core and growth-web both 1/1 Running, 20h, 0 restarts.",
-    "supersessionFixLive": "grep -c 'WITH RECURSIVE' dist/qualification/qualification.repository.js inside the running growth-core container returns 1. The TASKS.md instruction to confirm this by grep rather than by reading the entry has been carried out.",
-    "report": "GET /experiments/exp-001/report -> 200 in the S6d shape (spend.byCampaign, outOfScope). registrations 0, outOfScope.noTouchpoint 4 — unchanged since the deploy, as expected with no paid traffic since.",
-    "decisionChain": "GET /governance/decisions?experimentId=exp-001&experimentVersion=v1 -> 3 artefacts, launch/budget_change/stop, texts intact including the known stray line break in the launch hypothesis."
-  },
-  "s1a_verify_closed": "CLOSED 2026-08-01. exp-001/v1 remains the VERIFICATION chain, not the real first experiment — its stop reason is a test and its launch text carries a stray line break from a multi-line shell paste. Owner decision 2026-07-23 stands: leave v1 as the verify record, the REAL first experiment launches under EXPERIMENT_VERSION=v2, which means updating k8s/configmap-web.yaml and rolling the landing or every touchpoint keeps saying exp-001/v1."
+  "blockers": [
+    "Project owner approval evidence must remain explicit and truthful for onboarding."
+  ],
+  "followUps": [
+    "Confirm the final runtime status of growth during the next governance review."
+  ]
 }

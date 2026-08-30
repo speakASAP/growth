@@ -1,68 +1,51 @@
 # growth
 
-> **Status: first slice implemented, not deployed.**
-> Documentation → contracts → validation → coding, in that order.
+## Status
+Status: active
+Lifecycle: implementation
+Repository focus: AI growth experimentation platform for measuring paid-acquisition experiments with human approval and governance.
 
-AI Growth Experimentation Platform: takes a human-authored business hypothesis and runs it end-to-end as a measurable paid-acquisition experiment. Human-in-the-loop by default; no autonomous money spend.
+## Documentation authority
+This repository keeps its project intent and onboarding profile in the repo itself and follows the shared Alfares IPS standard in `intent-preservation-system` for cross-repository traceability.
 
-## Layout — one repository, several containers
+## Capabilities
+- auth: required — The service enforces access boundaries before work is accepted.
+- postgres: required — The repository persists service state in the shared PostgreSQL platform.
+- redis: not-applicable — No Redis runtime dependency is required for this repository.
+- logging: required — Structured operation logs are emitted to the shared logging microservice.
+- notifications: required — Operator alerts and user notifications are part of the supported workflow.
+- ai: required — The project depends on the shared AI microservice for reasoning and automation support.
+- payments: not-applicable — Payment processing is intentionally out of scope.
+- catalog: not-applicable — Catalog ownership is not part of the repository responsibility.
+- orders: not-applicable — No order-processing boundary is required here.
+- warehouse: not-applicable — No warehouse responsibility is part of the repository.
+- invoices: not-applicable — No invoice domain is owned by this project.
+- object-storage: not-applicable — This repository intentionally does not own object storage.
+- event-bus: not-applicable — No RabbitMQ event-streaming contract is owned in this repository scope.
+- docs-rag: required — The repository must remain discoverable through the shared docs-RAG indexing pipeline.
+- monitoring: required — The service exposes health and readiness evidence through the monitoring platform.
+- backups: not-applicable — No backup regime is required for this repository.
 
-| Path | Container | Port | Exposure | State |
-|---|---|---|---|---|
-| `docs/` | — | — | — | the authority for behaviour |
-| `services/core/` | `growth-core` | 3376 | ClusterIP only, no ingress | S1a code complete, not deployed |
-| `services/web/` | `growth-web` | 3377 | public, `growth.alfares.cz` | S5, not written yet |
+## Interfaces
+- Repository: https://github.com/speakASAP/growth
+- Standard: https://github.com/speakASAP/intent-preservation-system
+- Primary operator boundary: AI growth experimentation platform for measuring paid-acquisition experiments with human approval and governance.
+- Runtime health contract: GET /health when a live service is present.
 
-The contracts and the code implementing them share a repository deliberately. `C-001` publishes the
-decision-artefact JSON schema, and `services/core` validates against **that** file — generated into
-the source tree at build time and gitignored, so the document and the service cannot drift apart.
-Two repositories would have made that a convention held up by review; one repository makes it a
-build step.
+## Development
+- Source of truth lives in repository-local docs and implementation files.
+- Changes to runtime behaviour should be traced to the corresponding project documents before implementation.
+- Validation runs from the repo root with the central IPS validator.
 
-Deployables are still separate containers with separate exposure. Sharing a repository does not put
-`growth-core` on the internet — only a path in an ingress does that, and it has none.
+## Configuration
+- Project-specific configuration is stored in the repository and environment files when live runtime configuration is required.
+- Secrets remain outside the repository and are injected via the platform secret flow.
 
-## Document structure (IPS standard)
+## Deployment
+- This repository follows the Alfares deployment and validation conventions for the owning service or hub.
+- Deploys are gated by the platform deployment flow and the central IPS validation workflow.
 
-Follows the canonical Intent Preservation System layout used across the ecosystem (`intent-preservation-system`, `domain-research`, `aukro`, …).
-
-| Dir | Contents | State |
-|---|---|---|
-| `docs/06_architecture/` | **`ARCHITECTURE.md` — the implementation baseline** | ✅ v7 |
-| `docs/07_decisions/` | Decision records D1–D24 | ✅ |
-| `docs/08_roadmap/` | Delivery model, gates, slice rules | ✅ |
-| `docs/09_milestones/` | **MS-001…MS-004, MS-P** — synchronisation points | ✅ |
-| `docs/10_features/` | F-001…F-013 — one per slice | ◷ |
-| `docs/11_tasks/` | `TASK-NNN-*.md` — per feature | ◷ |
-| `docs/12_validation/` | Validation reports, API access evidence | ◷ |
-| `docs/13_context_packages/` | Context packages for AI worker agents | ◷ |
-| `docs/14_prompts/` | Coding prompts | ◷ |
-| `docs/16_operations/` | `PHASE0-ACCESS-TRACKER.md` | ✅ |
-| `docs/21_execution_plans/` | Per-slice execution plans (allowed/forbidden files, merge order) | ◷ |
-| `docs/23_documentation_contracts/` | Event JSON schemas — the executable contracts | ◷ |
-
-## Reading order
-
-1. `docs/06_architecture/ARCHITECTURE.md` — what is being built and why
-2. `docs/09_milestones/MS-001-access-and-baseline.md` — **the active milestone**
-3. `docs/08_roadmap/DELIVERY_PLAN.md` — how work is organised
-4. `docs/16_operations/PHASE0-ACCESS-TRACKER.md` — what is blocked on external access
-
-## Governing standards
-
-- `/home/ssf/.ai-agent-standards/CROSS_AGENT_AUTOMATION_STANDARD.md` — agent roles, parallel-work rules
-- `shared/AGENT_OPERATIONS.md` §Parallel Work
-
-## Current state
-
-|---|---|
-| Stage | Implementation started |
-| Active milestone | **MS-001 — Access and baseline** |
-| Blocked on | First business selection · ad-platform decision · Google/Meta account registration |
-| Code | `services/core` — S1a decision record, 63 tests passing, never deployed |
-| Market | Czechia only (stage 1), multiple businesses |
-| Ports | 3376 `growth-core` · 3377 reserved for `growth-web` |
-
-## Known blocking finding
-
-Revenue for **speakasap, marathon, chytrakoupe and cliplot does not flow through `orders-microservice`** — verified in code. Attribution depends on it. Solved by the universal `revenue.recognised` contract (MS-003) with flipflop as first client. Until then, experiments must target businesses already on `orders`.
+## Health and observability
+- Structured logs are emitted when the repository owns a runtime flow.
+- Health and readiness checks must remain truthful and project-specific rather than invented by automation.
+- Operational evidence is captured in the repository validation records and state files.

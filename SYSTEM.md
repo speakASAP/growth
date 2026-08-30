@@ -1,53 +1,53 @@
-# SYSTEM.md — growth
+# SYSTEM.md
 
-## Identity
+completeness_level: complete
 
-AI Growth experimentation platform. One repository, several containers.
+status: validated
 
-| Container | Source | Port | Exposure | State |
-|---|---|---|---|---|
-| `growth-core` | `services/core/` | 3376 | ClusterIP only, no ingress | code complete (S1a), not deployed |
-| `growth-web` | `services/web/` | 3377 | public, `growth.alfares.cz` | not written yet (S5) |
+## Purpose
+AI growth experimentation platform for measuring paid-acquisition experiments with human approval and governance.
 
-Namespace: `statex-apps`.
+## Responsibilities
+- maintain the project-specific operational contract for the repository
+- document the true runtime, tooling, or hub scope of the project
+- keep project invariants and validation debt honest and reviewable
+- preserve a link between the project and the shared IPS standard without copying it
 
-## Stack
+## Non-responsibilities
+- describing a runtime capability that is not actually owned by the repository
+- inventing ecosystem integrations for a hub, research, or documentation-only repo
+- bypassing project validation by asserting made-up evidence
 
-NestJS 10 · TypeScript (strict) · PostgreSQL (`pg`, plain SQL migrations) · Node 24
+## Inputs
+- repository-local intent, docs, and operational artefacts
+- shared Alfares ecosystem standards and routing conventions
+- project-specific deployment and validation requirements when the repo owns a live service
 
-## Storage
+## Outputs
+- project adoption profile and traceable task plan
+- truthful capability review for required and not-applicable integrations
+- documentation and validation evidence that matches the actual project boundary
 
-Database `growth_core` on the shared PostgreSQL (`db-server-postgres:5432`, in-cluster).
-Schema `governance`, table `decision_artefact` — append-only, enforced by trigger.
-Migrations run as a K8s init container, so a pod cannot serve writes against a schema
-that lacks the immutability trigger.
+## Dependencies
+- shared IPS repository for standards and validators
+- ecosystem runtime services only when the repository genuinely owns them
+- project-local code, configuration, and deployment metadata when present
 
-**Connects as the dedicated role `growth_core`, not the shared `dbadmin` superuser** — a
-deliberate deviation from the ecosystem convention. The append-only guarantee is a trigger, and
-a superuser can `ALTER TABLE ... DISABLE TRIGGER`; a service that can switch off its own audit
-guarantee does not really have one. The role is `NOSUPERUSER NOCREATEDB NOCREATEROLE` and owns
-only the `growth_core` database. It can still *connect* to other databases (PostgreSQL grants
-`CONNECT` to `PUBLIC` by default) but has read access to zero tables in any of them — verified
-across all 39 on 2026-07-20.
+## Upstream traceability
+- intent-preservation-system standard and validation rules
+- ecosystem deployment conventions and service ownership model
 
-## Contract coupling
+## Downstream artifacts
+- README, TASKS.md, STATE.json, and validation records
+- project governance docs and approval evidence
+- repo-specific runtime or tooling documentation when applicable
 
-`services/core/src/governance/schemas/` is generated from
-`docs/23_documentation_contracts/schemas/` before every build and test run, and is gitignored.
-The contract document holds the only copy of the schema, and the build fails if it is missing or
-malformed. This is the reason the code and the documents share a repository.
+## Validation criteria
+- the project validator exits successfully at planning phase
+- required sections exist in each IPS artifact
+- no placeholder text or fabricated evidence remains in the adoption profile
+- every capability is reviewed with a concrete reason
 
-## Environment variables
-
-See `services/core/.env.example`. Non-secret config → ConfigMap; `DB_PASSWORD` → Vault via
-ExternalSecret (`secret/prod/growth-core`).
-
-## Deploy
-
-`./scripts/deploy.sh` — shim into `shared/scripts/deploy.sh`, driven by `deploy.config.sh` at the
-repo root, which builds every container in the repository.
-Manifests: configmap, external-secret, deployment, service. No ingress until S5.
-
-## Health
-
-`GET /health` → 200, body reports `database: up|down`.
+## Open questions
+- confirm any live deployment or runtime boundary not explicitly stated in the repository docs
+- verify whether the project remains active, low-priority, or documentation-led at the time of the next governance review

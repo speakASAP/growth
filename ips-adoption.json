@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "profile": "runtime-service",
+  "project": {
+    "name": "growth",
+    "repository": "https://github.com/speakASAP/growth"
+  },
+  "standard": {
+    "repository": "https://github.com/speakASAP/intent-preservation-system",
+    "revision": "93b841891f890bbb1250bb371be3dedb6354e108"
+  },
+  "artifacts": {
+    "readme": "README.md",
+    "business": "BUSINESS.md",
+    "system": "SYSTEM.md",
+    "agents": "AGENTS.md",
+    "operations": "AGENT_OPERATIONS.md",
+    "claude": "CLAUDE.md",
+    "tasks": "TASKS.md",
+    "state": "STATE.json",
+    "constitution": "docs/00_constitution/CONSTITUTION.md",
+    "vision": "docs/01_vision/VISION.md",
+    "integrationContract": "docs/06_architecture/INTEGRATION_CONTRACT.md",
+    "projectInvariants": "docs/17_governance/PROJECT_INVARIANTS.md",
+    "validationDebt": "docs/orchestrator/VALIDATION_DEBT.md",
+    "bootstrapTask": "docs/11_tasks/TASK-001-bootstrap-service.md",
+    "bootstrapGoalImpact": "docs/22_goal_impact/GOAL-IMPACT-TASK-001.md",
+    "bootstrapExecutionPlan": "docs/21_execution_plans/EP-TASK-001-bootstrap-service.md",
+    "bootstrapValidation": "docs/12_validation/VAL-TASK-001-bootstrap-service.md"
+  },
+  "integrationReview": [
+    {
+      "capability": "auth",
+      "component": "auth-microservice",
+      "decision": "required",
+      "reason": "The growth repo genuinely requires this capability within the project scope.",
+      "contract": "Project-owned runtime contract for the required service boundary.",
+      "configuration": "Repository-local configuration and platform references for the required dependency.",
+      "failureMode": "The service fails closed and records the real condition without inventing success.",
+      "validation": "The central validation flow confirms the dependency is present and the project remains truthful about the contract."
+    },
+    {
+      "capability": "postgres",
+      "component": "db-server-postgres",
+      "decision": "required",
+      "reason": "The growth repo genuinely requires this capability within the project scope.",
+      "contract": "Project-owned runtime contract for the required service boundary.",
+      "configuration": "Repository-local configuration and platform references for the required dependency.",
+      "failureMode": "The service fails closed and records the real condition without inventing success.",
+      "validation": "The central validation flow confirms the dependency is present and the project remains truthful about the contract."
+    },
+    {
+      "capability": "redis",
+      "component": "not-applicable",
+      "decision": "not-applicable",
+      "reason": "This repository does not own a runtime service or project scope that requires this capability; a hub or low-priority experimental repo must remain honest about the boundary.",
+      "contract": "not-applicable",
+      "configuration": "not-applicable",
+      "failureMode": "not-applicable",
+      "validation": "not-applicable"
+    },
+    {
+      "capability": "logging",
+      "component": "logging-microservice",
+      "decision": "required",
+      "reason": "The growth repo genuinely requires this capability within the project scope.",
+      "contract": "Project-owned runtime contract for the required service boundary.",
+      "configuration": "Repository-local configuration and platform references for the required dependency.",
+      "failureMode": "The service fails closed and records the real condition without inventing success.",
+      "validation": "The central validation flow confirms the dependency is present and the project remains truthful about the contract."
+    },
+    {
+      "capability": "notifications",
+      "component": "notifications-microservice",
+      "decision": "required",
+      "reason": "The growth repo genuinely requires this capability within the project scope.",
+      "contract": "Project-owned runtime contract for the required service boundary.",
+      "configuration": "Repository-local configuration and platform references for the required dependency.",
+      "failureMode": "The service fails closed and records the real condition without inventing success.",
+      "validation": "The central validation flow confirms the dependency is present and the project remains truthful about the contract."
+    },
+    {
+      "capability": "ai",
+      "component": "ai-microservice",
+      "decision": "required",
+      "reason": "The growth repo genuinely requires this capability within the project scope.",
+      "contract": "Project-owned runtime contract for the required service boundary.",
+      "configuration": "Repository-local configuration and platform references for the required dependency.",
+      "failureMode": "The service fails closed and records the real condition without inventing success.",
+      "validation": "The central validation flow confirms the dependency is present and the project remains truthful about the contract."
+    },
+    {
+      "capability": "payments",
+      "component": "not-applicable",
+      "decision": "not-applicable",
+      "reason": "This repository does not own a runtime service or project scope that requires this capability; a hub or low-priority experimental repo must remain honest about the boundary.",
+      "contract": "not-applicable",
+      "configuration": "not-applicable",
+      "failureMode": "not-applicable",
+      "validation": "not-applicable"
+    },
+    {
+      "capability": "catalog",
+      "component": "not-applicable",
+      "decision": "not-applicable",
+      "reason": "This repository does not own a runtime service or project scope that requires this capability; a hub or low-priority experimental repo must remain honest about the boundary.",
+      "contract": "not-applicable",
+      "configuration": "not-applicable",
+      "failureMode": "not-applicable",
+      "validation": "not-applicable"
+    },
+    {
+      "capability": "orders",
+      "component": "not-applicable",
+      "decision": "not-applicable",
+      "reason": "This repository does not own a runtime service or project scope that requires this capability; a hub or low-priority experimental repo must remain honest about the boundary.",
+      "contract": "not-applicable",
+      "configuration": "not-applicable",
+      "failureMode": "not-applicable",
+      "validation": "not-applicable"
+    },
+    {
+      "capability": "warehouse",
+      "component": "not-applicable",
+      "decision": "not-applicable",
+      "reason": "This repository does not own a runtime service or project scope that requires this capability; a hub or low-priority experimental repo must remain honest about the boundary.",
+      "contract": "not-applicable",
+      "configuration": "not-applicable",
+      "failureMode": "not-applicable",
+      "validation": "not-applicable"
+    },
+    {
+      "capability": "invoices",
+      "component": "not-applicable",
+      "decision": "not-applicable",
+      "reason": "This repository does not own a runtime service or project scope that requires this capability; a hub or low-priority experimental repo must remain honest about the boundary.",
+      "contract": "not-applicable",
+      "configuration": "not-applicable",
+      "failureMode": "not-applicable",
+      "validation": "not-applicable"
+    },
+    {
+      "capability": "object-storage",
+      "component": "not-applicable",
+      "decision": "not-applicable",
+      "reason": "This repository does not own a runtime service or project scope that requires this capability; a hub or low-priority experimental repo must remain honest about the boundary.",
+      "contract": "not-applicable",
+      "configuration": "not-applicable",
+      "failureMode": "not-applicable",
+      "validation": "not-applicable"
+    },
+    {
+      "capability": "event-bus",
+      "component": "not-applicable",
+      "decision": "not-applicable",
+      "reason": "This repository does not own a runtime service or project scope that requires this capability; a hub or low-priority experimental repo must remain honest about the boundary.",
+      "contract": "not-applicable",
+      "configuration": "not-applicable",
+      "failureMode": "not-applicable",
+      "validation": "not-applicable"
+    },
+    {
+      "capability": "docs-rag",
+      "component": "docs-rag-microservice",
+      "decision": "required",
+      "reason": "The growth repo genuinely requires this capability within the project scope.",
+      "contract": "Project-owned runtime contract for the required service boundary.",
+      "configuration": "Repository-local configuration and platform references for the required dependency.",
+      "failureMode": "The service fails closed and records the real condition without inventing success.",
+      "validation": "The central validation flow confirms the dependency is present and the project remains truthful about the contract."
+    },
+    {
+      "capability": "monitoring",
+      "component": "monitoring-microservice",
+      "decision": "required",
+      "reason": "The growth repo genuinely requires this capability within the project scope.",
+      "contract": "Project-owned runtime contract for the required service boundary.",
+      "configuration": "Repository-local configuration and platform references for the required dependency.",
+      "failureMode": "The service fails closed and records the real condition without inventing success.",
+      "validation": "The central validation flow confirms the dependency is present and the project remains truthful about the contract."
+    },
+    {
+      "capability": "backups",
+      "component": "not-applicable",
+      "decision": "not-applicable",
+      "reason": "This repository does not own a runtime service or project scope that requires this capability; a hub or low-priority experimental repo must remain honest about the boundary.",
+      "contract": "not-applicable",
+      "configuration": "not-applicable",
+      "failureMode": "not-applicable",
+      "validation": "not-applicable"
+    }
+  ]
+}
