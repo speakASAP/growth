@@ -1,14 +1,11 @@
 # Tasks
 
-## Active
-- bootstrap adoption profile for growth
+## Active- bootstrap adoption profile for growth
 
-## Ready next
-- review any open ecosystem registration gaps
+## Ready Next- review any open ecosystem registration gaps
 - confirm whether a live runtime deployment exists or whether the repo remains documentation-led
 
-## Blocked
-- no active blockers beyond requiring the truthful project-owner approval confirmation for onboarding
+## Blocked- no active blockers beyond requiring the truthful project-owner approval confirmation for onboarding
 
 ## Completed
 - root adoption profile scaffolded
